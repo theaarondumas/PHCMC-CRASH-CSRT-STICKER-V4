@@ -11,14 +11,16 @@ import {
    0) FIREBASE (PASTE CONFIG)
    ========================= */
 const firebaseConfig = {
-  // 🔥 PASTE YOUR FIREBASE CONFIG HERE
-  // apiKey: "...",
-  // authDomain: "...",
-  // projectId: "...",
-  // storageBucket: "...",
-  // messagingSenderId: "...",
-  // appId: "..."
+  apiKey: "AIzaSyB-3bjNKIf-OOcRu3HtxdsjnMugpD1lhQU",
+  authDomain: "phcmc-crash-cart.firebaseapp.com",
+  projectId: "phcmc-crash-cart",
+  storageBucket: "phcmc-crash-cart.firebasestorage.app",
+  messagingSenderId: "478233106614",
+  appId: "1:478233106614:web:441f55c8f401bb335aae17",
+  measurementId: "G-SQJ14G87G6"
 };
+
+
 
 let app = null;
 let db = null;
