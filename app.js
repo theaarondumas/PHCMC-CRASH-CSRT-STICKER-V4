@@ -5,7 +5,7 @@
    - Department dropdown card (Cart Type + Area)
    - Save -> local entries
    - Preview -> Edit/Delete
-   - Submit -> Firestore (Anonymous Auth)
+   - Submit -> Firestore (Anonymous Auth, runs ONLY on submit)
    ============================================================ */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
@@ -16,10 +16,14 @@ import {
   serverTimestamp,
   enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+import {
+  getAuth,
+  signInAnonymously,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
 
 /* =========================
-   Firebase Config (YOUR REAL VALUES)
+   Firebase Config
    ========================= */
 const firebaseConfig = {
   apiKey: "AIzaSyB-3bjNKIf-OOcRu3HtxdsjnMugpD1lhQU",
@@ -43,14 +47,12 @@ const LS = {
 };
 
 /* =========================
-   PIN Gate (workflow gate)
-   Change this PIN anytime.
+   PIN Gate
    ========================= */
-const ACCESS_PIN = "2026"; // <= 8 digits per your input maxlength
+const ACCESS_PIN = "2026"; // <= 8 digits
 
 /* =========================
    Cart Types -> Areas
-   Edit these to your exact PHC list.
    ========================= */
 const AREAS_BY_CARTTYPE = {
   ADULT_MAIN: ["ED", "ICU", "OR", "PACU", "Med-Surg", "Telemetry"],
@@ -60,16 +62,14 @@ const AREAS_BY_CARTTYPE = {
 };
 
 /* =========================
-   DOM (IDs from your HTML)
+   DOM
    ========================= */
 const el = {
-  // Gate
   pinGate: document.getElementById("pinGate"),
   pinInput: document.getElementById("pinInput"),
   pinUnlockBtn: document.getElementById("pinUnlockBtn"),
   pinError: document.getElementById("pinError"),
 
-  // Topbar
   lockBtn: document.getElementById("lockBtn"),
   subtitle: document.getElementById("subtitle"),
   syncDot: document.getElementById("syncDot"),
@@ -77,11 +77,9 @@ const el = {
 
   toast: document.getElementById("toast"),
 
-  // Views
   viewEntry: document.getElementById("viewEntry"),
   viewPreview: document.getElementById("viewPreview"),
 
-  // Department UI
   deptBtn: document.getElementById("deptBtn"),
   deptCard: document.getElementById("deptCard"),
   cartTypeSelect: document.getElementById("cartTypeSelect"),
@@ -90,7 +88,6 @@ const el = {
   selectedKeyMeta: document.getElementById("selectedKeyMeta"),
   savedBadge: document.getElementById("savedBadge"),
 
-  // Sticker inputs
   supplyFirst: document.getElementById("supplyFirst"),
   supplyDate: document.getElementById("supplyDate"),
   supplyDone: document.getElementById("supplyDone"),
@@ -104,11 +101,9 @@ const el = {
 
   headerCheck: document.getElementById("headerCheck"),
 
-  // Actions
   saveBtn: document.getElementById("saveBtn"),
   clearBtn: document.getElementById("clearBtn"),
 
-  // Preview / submit
   previewBtn: document.getElementById("previewBtn"),
   previewCount: document.getElementById("previewCount"),
   entryBtn: document.getElementById("entryBtn"),
@@ -128,46 +123,36 @@ const state = {
   selection: { cartType: "", area: "" },
   entries: [],
   editingIndex: null,
-
   authReady: false,
   user: null
 };
 
 /* =========================
-   Toast
+   Helpers
    ========================= */
 function toast(msg) {
   console.log("[toast]", msg);
   if (!el.toast) return alert(msg);
-
   el.toast.hidden = false;
   el.toast.textContent = msg;
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => {
-    el.toast.hidden = true;
-  }, 2600);
+  toast._t = setTimeout(() => (el.toast.hidden = true), 2400);
 }
 
-function setSync(status, ok = true) {
+function setSync(text, ok = true) {
   if (!el.syncText || !el.syncDot) return;
-  el.syncText.textContent = status;
+  el.syncText.textContent = text;
   el.syncDot.style.opacity = "1";
   el.syncDot.style.filter = ok ? "none" : "grayscale(1)";
 }
 
-/* =========================
-   Local storage
-   ========================= */
 function loadLS() {
   state.unlocked = localStorage.getItem(LS.PIN_UNLOCKED) === "1";
-
   try {
-    state.selection = JSON.parse(localStorage.getItem(LS.CURRENT_SEL) || "{}");
+    state.selection = JSON.parse(localStorage.getItem(LS.CURRENT_SEL) || "{}") || { cartType: "", area: "" };
   } catch {
     state.selection = { cartType: "", area: "" };
   }
-  if (!state.selection) state.selection = { cartType: "", area: "" };
-
   try {
     state.entries = JSON.parse(localStorage.getItem(LS.ENTRIES) || "[]");
   } catch {
@@ -201,7 +186,6 @@ function unlockWithPin() {
   const pin = (el.pinInput.value || "").trim();
   if (!pin) return (el.pinError.textContent = "Enter PIN.");
   if (pin !== ACCESS_PIN) return (el.pinError.textContent = "Wrong PIN.");
-
   state.unlocked = true;
   saveLS();
   hideGate();
@@ -209,35 +193,35 @@ function unlockWithPin() {
 }
 
 /* =========================
-   Department Card UI
+   Department UI
    ========================= */
-function openDeptCard() {
-  el.deptCard.hidden = false;
-}
-function closeDeptCard() {
-  el.deptCard.hidden = true;
-}
+function openDeptCard() { el.deptCard.hidden = false; }
+function closeDeptCard() { el.deptCard.hidden = true; }
 
 function populateAreasForCartType(cartType) {
   const areas = AREAS_BY_CARTTYPE[cartType] || [];
   el.areaSelect.innerHTML = `<option value="" selected disabled>Select area…</option>`;
-  for (const a of areas) {
+  areas.forEach((a) => {
     const opt = document.createElement("option");
     opt.value = a;
     opt.textContent = a;
     el.areaSelect.appendChild(opt);
-  }
+  });
   el.areaSelect.disabled = areas.length === 0;
+}
+
+function setDeptBtnLabel(labelText) {
+  // Safely update ONLY the text portion of the button while keeping the badge span
+  const textNode = Array.from(el.deptBtn.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+  if (textNode) textNode.textContent = `${labelText} `;
+  else el.deptBtn.insertBefore(document.createTextNode(`${labelText} `), el.deptBtn.firstChild);
 }
 
 function updateSelectionMeta() {
   const ct = state.selection.cartType || "—";
   const ar = state.selection.area || "—";
   el.selectedKeyMeta.textContent = `Selected: ${ct} → ${ar}`;
-
-  // Update button label without removing your savedBadge span
-  const label = state.selection.area ? `${state.selection.area} ▾` : "DEPARTMENT ▾";
-  el.deptBtn.childNodes[0].textContent = label + " ";
+  setDeptBtnLabel(state.selection.area ? `${state.selection.area} ▾` : "DEPARTMENT ▾");
 }
 
 function selectionKey() {
@@ -247,7 +231,7 @@ function selectionKey() {
 }
 
 /* =========================
-   Sticker form
+   Form
    ========================= */
 function readForm() {
   return {
@@ -263,8 +247,7 @@ function readForm() {
   };
 }
 
-function writeForm(data) {
-  const d = data || {};
+function writeForm(d = {}) {
   el.supplyFirst.value = d.supplyFirst || "";
   el.supplyDate.value = d.supplyDate || "";
   el.supplyDone.value = d.supplyDone || "";
@@ -288,9 +271,7 @@ function markSavedUI() {
   el.savedBadge.hidden = false;
   el.headerCheck.hidden = false;
   clearTimeout(markSavedUI._t);
-  markSavedUI._t = setTimeout(() => {
-    el.savedBadge.hidden = true;
-  }, 1800);
+  markSavedUI._t = setTimeout(() => (el.savedBadge.hidden = true), 1600);
 }
 
 /* =========================
@@ -300,12 +281,11 @@ function upsertEntry() {
   const key = selectionKey();
   if (!key) return toast("Select Cart Type + Area first.");
 
-  const now = new Date();
   const entry = {
     key,
     cartType: state.selection.cartType,
     area: state.selection.area,
-    lastUpdated: now.toLocaleString(),
+    lastUpdated: new Date().toLocaleString(),
     form: readForm()
   };
 
@@ -361,7 +341,7 @@ function editEntry(idx) {
 }
 
 /* =========================
-   Preview list render
+   Preview
    ========================= */
 function escapeHtml(s) {
   return String(s ?? "")
@@ -374,7 +354,6 @@ function escapeHtml(s) {
 
 function renderPreviewList() {
   el.previewList.innerHTML = "";
-
   if (!state.entries.length) {
     el.previewList.innerHTML = `<div class="meta">No saved entries yet.</div>`;
     return;
@@ -412,7 +391,6 @@ function goEntry() {
   el.viewPreview.hidden = true;
   el.subtitle.textContent = "Sticker entry → Preview → Submit";
 }
-
 function goPreview() {
   el.viewEntry.hidden = true;
   el.viewPreview.hidden = false;
@@ -422,7 +400,7 @@ function goPreview() {
 }
 
 /* =========================
-   Firebase init + auth
+   Firebase
    ========================= */
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -430,39 +408,46 @@ const auth = getAuth(app);
 
 enableIndexedDbPersistence(db).catch(() => {});
 
-function ensureAnonAuth() {
+function ensureAnonAuthOnce() {
+  // Do not spam signIn attempts; run once on submit
   return new Promise((resolve) => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         state.user = user;
         state.authReady = true;
-        setSync("Signed in", true);
         unsub?.();
-        resolve(true);
-        return;
+        return resolve(true);
       }
       try {
-        setSync("Signing in…", true);
         await signInAnonymously(auth);
+        // auth state listener will fire again with user
       } catch (e) {
         console.error("Anon auth failed:", e);
-        setSync("Auth failed", false);
-        toast(`Auth failed: ${e.code || ""} ${e.message || e}`);
-        resolve(false);
+        return resolve({ ok: false, err: e });
       }
     });
   });
 }
 
-/* =========================
-   Submit to Firestore
-   ========================= */
 async function submitToFirebase() {
   if (!state.unlocked) return toast("Locked. Enter PIN first.");
   if (!state.entries.length) return toast("Nothing to submit.");
 
-  const ok = await ensureAnonAuth();
-  if (!ok) return;
+  setSync("Signing in…", true);
+  const res = await ensureAnonAuthOnce();
+  if (res !== true) {
+    const e = res?.err;
+    setSync("Auth blocked", false);
+    toast(`Auth blocked: ${e?.code || ""}`.trim());
+
+    // This specific error means signups are blocked in the project
+    if (e?.code?.includes("signup-are-blocked")) {
+      toast("Fix: enable User sign-up in Google Cloud Identity Platform OR disable signup blocking.");
+    }
+    return;
+  }
+
+  setSync("Submitting…", true);
 
   const submissionId = `sub_${Date.now()}`;
   const payload = {
@@ -472,14 +457,13 @@ async function submitToFirebase() {
   };
 
   try {
-    setSync("Submitting…", true);
     await setDoc(doc(db, SUBMISSIONS_COLLECTION, submissionId), payload);
     setSync("Submitted ✅", true);
     toast("Submitted to Firebase ✅");
   } catch (e) {
     console.error("Firestore submit error:", e);
     setSync("Submit failed", false);
-    toast(`Submit failed: ${e.code || ""} ${e.message || e}`);
+    toast(`Submit failed: ${e.code || ""}`.trim());
   }
 }
 
@@ -497,28 +481,23 @@ function wipeAllLocal() {
 }
 
 /* =========================
-   Bind events (MATCHED TO YOUR HTML)
+   Events
    ========================= */
 function bind() {
-  // PIN gate
   el.pinUnlockBtn.addEventListener("click", unlockWithPin);
   el.pinInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") unlockWithPin();
   });
 
-  // Lock button
   el.lockBtn.addEventListener("click", showGate);
 
-  // Department button opens card
   el.deptBtn.addEventListener("click", () => {
     if (!state.unlocked) return toast("Enter PIN first.");
     openDeptCard();
   });
 
-  // Close card
   el.closeDeptCard.addEventListener("click", closeDeptCard);
 
-  // Cart type
   el.cartTypeSelect.addEventListener("change", () => {
     state.selection.cartType = el.cartTypeSelect.value;
     state.selection.area = "";
@@ -530,7 +509,6 @@ function bind() {
     updateSelectionMeta();
   });
 
-  // Area
   el.areaSelect.addEventListener("change", () => {
     state.selection.area = el.areaSelect.value;
     saveLS();
@@ -539,7 +517,6 @@ function bind() {
     toast(`Selected: ${state.selection.area}`);
   });
 
-  // Save / clear
   el.saveBtn.addEventListener("click", () => {
     if (!state.unlocked) return toast("Enter PIN first.");
     upsertEntry();
@@ -550,24 +527,21 @@ function bind() {
     toast("Cleared.");
   });
 
-  // Preview navigation
   el.previewBtn.addEventListener("click", () => {
     if (!state.unlocked) return toast("Enter PIN first.");
     goPreview();
   });
+
   el.entryBtn.addEventListener("click", goEntry);
 
-  // Submit / wipe
   el.submitBtn.addEventListener("click", submitToFirebase);
   el.wipeAllBtn.addEventListener("click", wipeAllLocal);
 
-  // Preview list edit/delete (delegated)
   el.previewList.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-action]");
     if (!btn) return;
     const idx = Number(btn.dataset.idx);
     if (!Number.isFinite(idx)) return;
-
     if (btn.dataset.action === "delete") deleteEntry(idx);
     if (btn.dataset.action === "edit") editEntry(idx);
   });
@@ -579,11 +553,12 @@ function bind() {
 function init() {
   loadLS();
 
-  // Gate
-  if (state.unlocked) hideGate();
-  else showGate();
+  if (state.unlocked) {
+    hideGate();
+  } else {
+    el.pinGate.hidden = false;
+  }
 
-  // Restore selection
   if (state.selection.cartType) {
     el.cartTypeSelect.value = state.selection.cartType;
     populateAreasForCartType(state.selection.cartType);
@@ -599,10 +574,6 @@ function init() {
   setSync("Ready", true);
 
   bind();
-
-  // Kick auth in background
-  ensureAnonAuth();
-
   goEntry();
 }
 
