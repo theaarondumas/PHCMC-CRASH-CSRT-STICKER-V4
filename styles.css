@@ -334,3 +334,16 @@ body{
   color: rgba(255,255,255,.7);
   font-size: 12px;
 }
+
+/* FORCE PIN GATE TO ALWAYS OVERLAY EVERYTHING */
+.pinGate{
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 99999 !important;
+  display: flex !important;
+}
+
+.pinCard{
+  position: relative;
+  z-index: 100000 !important;
+}
