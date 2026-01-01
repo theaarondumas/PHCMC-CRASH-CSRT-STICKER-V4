@@ -7,28 +7,24 @@ import {
   enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
-/* =========================
-   FIREBASE (PASTE CONFIG)
-   ========================= */
+/* ===========================
+   FIREBASE CONFIG
+   =========================== */
 const firebaseConfig = {
-  apiKey: "AIzaSyB-3bjNKIf-OOcRu3HtxdsjnMugpD1lhQU",
+  apiKey: "AIzaSyB-3bjNKIf-00cRu3Htxdsj…",
   authDomain: "phcmc-crash-cart.firebaseapp.com",
   projectId: "phcmc-crash-cart",
-  storageBucket: "phcmc-crash-cart.firebasestorage.app",
+  storageBucket: "phcmc-crash-cart.appspot.com",
   messagingSenderId: "478233106614",
-  appId: "1:478233106614:web:441f55c8f401bb335aae17",
-  measurementId: "G-SQJ14G87G6"
+  appId: "1:478233106614:web:441f55c8f4…"
 };
 
-let app = null;
-let db = null;
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
-function initFirebase(){
-  if (!firebaseConfig?.projectId) return;
-  app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  enableIndexedDbPersistence(db).catch(()=>{});
-}
+enableIndexedDbPersistence(db).catch(() => {});
+
+
 
 /* =========================
    PIN GATE + LOCK BUTTON
