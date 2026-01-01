@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Crash Cart Stickers</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app">
+
+    <header class="topbar">
+      <div class="topbar__left">
+        <button id="btnBack" class="btn btn--ghost" hidden>← Back</button>
+      </div>
+
+      <div class="topbar__center">
+        <div class="title">Crash Cart Stickers</div>
+        <div class="subtitle" id="subtitle">Sticker entry → Preview → Submit</div>
+      </div>
+
+      <div class="topbar__right">
+        <div class="syncchip">
+          <span class="dot" id="syncDot"></span>
+          <span id="syncText">…</span>
+        </div>
+      </div>
+    </header>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <!-- VIEW: ENTRY -->
+    <main id="viewEntry" class="view">
+      <div class="panel">
+
+        <!-- Selection Row -->
+        <div class="selectRow">
+          <button id="deptBtn" class="btn btn--primary deptBtn">
+            DEPARTMENT ▾
+            <span id="savedBadge" class="savedBadge" hidden>✅ SAVED</span>
+          </button>
+
+          <button id="previewBtn" class="btn btn--ghost">
+            Preview / Submit
+            <span id="previewCount" class="countPill">0</span>
+          </button>
+        </div>
+
+        <!-- Dropdown Card -->
+        <div id="deptCard" class="card" hidden>
+          <div class="grid">
+            <label class="field">
+              <span class="field__label">Cart Type</span>
+              <select id="cartTypeSelect" class="input">
+                <option value="" selected disabled>Select cart type…</option>
+                <option value="ADULT_MAIN">Adult Crash Carts (Main)</option>
+                <option value="BROSELOW">Broselow Carts</option>
+                <option value="NEONATAL">Neonatal Crash Carts</option>
+                <option value="ADULT_TOWERS">Adult Crash Carts (Towers / North Tower)</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field__label">Area / Department</span>
+              <select id="areaSelect" class="input" disabled>
+                <option value="" selected disabled>Select area…</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="row row--space">
+            <div class="meta" id="selectedKeyMeta">Selected: —</div>
+            <button id="closeDeptCard" class="btn btn--ghost">Close</button>
+          </div>
+        </div>
+
+        <!-- Stickers -->
+        <section class="stickerWrap">
+
+          <!-- Supply Sticker -->
+          <div class="sticker sticker--lime">
+            <div class="stickerHeader">
+              <div class="brand">
+                <div class="brand__name">Providence</div>
+                <div class="brand__sub">Holy Cross Hospital</div>
+                <div class="brand__sub">Central Department</div>
+                <div class="brand__phone">818-496-1190</div>
+              </div>
+
+              <div class="headerRight">
+                <div class="headerRight__check" id="headerCheck" hidden>✅</div>
+              </div>
+            </div>
+
+            <div class="stickerTitle">CRASH CART CHECK</div>
+            <div class="line"></div>
+
+            <div class="stickerBody">
+              <div class="stickerRow">
+                <div class="label">First supply to expire:</div>
+                <input id="supplyFirst" class="stickerInput" placeholder="—" />
+              </div>
+              <div class="stickerRow">
+                <div class="label">Date:</div>
+                <input id="supplyDate" class="stickerInput" placeholder="MM/DD/YYYY" />
+              </div>
+              <div class="stickerRow">
+                <div class="label">Check Date done:</div>
+                <input id="supplyDone" class="stickerInput" placeholder="MM/DD/YYYY" />
+              </div>
+              <div class="stickerRow">
+                <div class="label">CS tech:</div>
+                <input id="supplyTech" class="stickerInput" placeholder="Initials / Name" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Drug Sticker -->
+          <div class="sticker sticker--orange">
+            <div class="stickerTitle stickerTitle--small">Crash Cart Check</div>
+            <div class="line"></div>
+
+            <div class="stickerBody">
+              <div class="stickerRow">
+                <div class="label">First Drug to Exp:</div>
+                <input id="drugFirstExp" class="stickerInput" placeholder="—" />
+              </div>
+              <div class="stickerRow">
+                <div class="label">Name of Drug:</div>
+                <input id="drugName" class="stickerInput" placeholder="—" />
+              </div>
+              <div class="stickerRow">
+                <div class="label">Lock Number:</div>
+                <input id="drugLock" class="stickerInput" placeholder="—" />
+              </div>
+              <div class="stickerRow">
+                <div class="label">Check done on:</div>
+                <input id="drugDoneOn" class="stickerInput" placeholder="MM/DD/YYYY" />
+              </div>
+              <div class="stickerRow">
+                <div class="label">Initials:</div>
+                <input id="drugInitials" class="stickerInput" placeholder="—" />
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+        <div class="actions">
+          <button id="saveBtn" class="btn btn--primary btn--xl">SAVE (✅ will appear)</button>
+          <button id="clearBtn" class="btn btn--ghost">Clear Fields</button>
+        </div>
+
+        <div class="meta">
+          Tip: Select Cart Type + Area first. Save creates a ✅ “completed sticker” for that location.
+        </div>
+
+      </div>
+    </main>
+
+    <!-- VIEW: PREVIEW -->
+    <main id="viewPreview" class="view" hidden>
+      <div class="panel">
+        <div class="row row--space">
+          <h2 class="h2">Preview Stickers</h2>
+          <button id="entryBtn" class="btn btn--ghost">Back to Entry</button>
+        </div>
+
+        <div class="meta" id="previewMeta">0 saved.</div>
+
+        <div id="previewList" class="previewList"></div>
+
+        <div class="actions">
+          <button id="submitBtn" class="btn btn--primary btn--xl">SUBMIT TO FIREBASE</button>
+          <button id="wipeAllBtn" class="btn btn--ghost">Wipe All Saved (local)</button>
+        </div>
+
+        <div class="meta">
+          Submit uploads everything as one “Submission” (with an entries array). You can edit any item before submitting.
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <small id="footerStatus">Local: ready</small>
+    </footer>
+
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
