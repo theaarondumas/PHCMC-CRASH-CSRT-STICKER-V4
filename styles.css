@@ -347,3 +347,8 @@ body{
   position: relative;
   z-index: 100000 !important;
 }
+
+/* IMPORTANT: allow JS to hide the PIN gate */
+.pinGate[hidden]{
+  display: none !important;
+}
