@@ -8,19 +8,17 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
 /* =========================
-   0) FIREBASE (PASTE CONFIG)
+   FIREBASE (PASTE CONFIG)
    ========================= */
 const firebaseConfig = {
-  apiKey: "AIzaSyB-3bjNKIf-OOcRu3HtxdsjnMugpD1lhQU",
-  authDomain: "phcmc-crash-cart.firebaseapp.com",
-  projectId: "phcmc-crash-cart",
-  storageBucket: "phcmc-crash-cart.firebasestorage.app",
-  messagingSenderId: "478233106614",
-  appId: "1:478233106614:web:441f55c8f401bb335aae17",
-  measurementId: "G-SQJ14G87G6"
+  // 🔥 PASTE YOUR FIREBASE CONFIG HERE
+  // apiKey: "...",
+  // authDomain: "...",
+  // projectId: "...",
+  // storageBucket: "...",
+  // messagingSenderId: "...",
+  // appId: "..."
 };
-
-
 
 let app = null;
 let db = null;
@@ -33,7 +31,74 @@ function initFirebase(){
 }
 
 /* =========================
-   1) DATA: YOUR FULL LISTS
+   PIN GATE + LOCK BUTTON
+   ========================= */
+
+// PIN = 045360  (stored as SHA-256 hash)
+const PIN_SHA256_HEX = "b37628edb9bff2492cf1e8024d529128269c2cd31c75e72b53cc0df4d6f75e65";
+const PIN_SESSION_KEY = "cc_pin_unlocked_v1";
+
+function hexFromBuffer(buf){
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+async function sha256Hex(str){
+  const enc = new TextEncoder().encode(str);
+  const digest = await crypto.subtle.digest("SHA-256", enc);
+  return hexFromBuffer(digest);
+}
+
+function setupPinGate(){
+  const gate = document.getElementById("pinGate");
+  const input = document.getElementById("pinInput");
+  const btn = document.getElementById("pinUnlockBtn");
+  const err = document.getElementById("pinError");
+
+  if(!gate || !input || !btn) return;
+
+  const unlocked = sessionStorage.getItem(PIN_SESSION_KEY) === "1";
+  if(unlocked){
+    gate.style.display = "none";
+    return;
+  }
+
+  gate.style.display = "flex";
+
+  const attempt = async () => {
+    err.textContent = "";
+    const pin = (input.value || "").trim();
+    if(pin.length < 4){
+      err.textContent = "PIN must be at least 4 digits.";
+      return;
+    }
+    const hash = await sha256Hex(pin);
+    if(hash === PIN_SHA256_HEX){
+      sessionStorage.setItem(PIN_SESSION_KEY, "1");
+      gate.style.display = "none";
+      input.value = "";
+    } else {
+      err.textContent = "Incorrect PIN.";
+      input.value = "";
+      input.focus();
+    }
+  };
+
+  btn.addEventListener("click", attempt);
+  input.addEventListener("keydown", (e)=>{ if(e.key === "Enter") attempt(); });
+  setTimeout(()=>input.focus(), 150);
+}
+
+function setupLockButton(){
+  const btn = document.getElementById("lockBtn");
+  if(!btn) return;
+
+  btn.addEventListener("click", () => {
+    sessionStorage.removeItem(PIN_SESSION_KEY);
+    location.reload();
+  });
+}
+
+/* =========================
+   YOUR FULL LISTS
    ========================= */
 
 function backupSlots(label, count){
@@ -76,12 +141,7 @@ const ADULT_TOWERS = [
   { group: "1ST FLOOR PAVILION ICU", items: ["PAV A","PAV B","PAV C"] }
 ];
 
-const CART_MAP = {
-  ADULT_MAIN,
-  BROSELOW,
-  NEONATAL,
-  ADULT_TOWERS
-};
+const CART_MAP = { ADULT_MAIN, BROSELOW, NEONATAL, ADULT_TOWERS };
 
 const CART_TYPE_LABEL = {
   ADULT_MAIN: "Adult Crash Carts (Main)",
@@ -91,17 +151,15 @@ const CART_TYPE_LABEL = {
 };
 
 /* =========================
-   2) STATE (LOCAL FIRST)
+   STATE (LOCAL FIRST)
    ========================= */
 
-const LOCAL_KEY = "cc_stickers_clean_v1";
+const LOCAL_KEY = "cc_stickers_clean_v2"; // bumped to v2 with pin/lock changes
 
 const defaultState = {
   cartType: "",
   area: "",
-  saved: {
-    // key: `${cartType}::${area}` -> entry object
-  },
+  saved: {},           // key: `${cartType}::${area}` -> entry object
   lastTouchedKey: ""
 };
 
@@ -122,7 +180,7 @@ function saveState(){
 }
 
 /* =========================
-   3) DOM
+   DOM
    ========================= */
 
 const $ = (id)=> document.getElementById(id);
@@ -174,7 +232,7 @@ const drugDoneOn = $("drugDoneOn");
 const drugInitials = $("drugInitials");
 
 /* =========================
-   4) UI HELPERS
+   UI HELPERS
    ========================= */
 
 function showToast(msg, ms=1600){
@@ -257,8 +315,6 @@ function setInputsFromSavedIfExists(){
     drugLock.value     = entry.drugLock || "";
     drugDoneOn.value   = entry.drugDoneOn || "";
     drugInitials.value = entry.drugInitials || "";
-  }else{
-    // keep empty; don’t auto-wipe unless user clears
   }
 }
 
@@ -267,6 +323,7 @@ function clearInputs(){
   supplyDate.value  = "";
   supplyDone.value  = "";
   supplyTech.value  = "";
+
   drugFirstExp.value = "";
   drugName.value     = "";
   drugLock.value     = "";
@@ -277,6 +334,10 @@ function clearInputs(){
 function countSaved(){
   return Object.keys(state.saved).length;
 }
+
+/* =========================
+   PREVIEW RENDER
+   ========================= */
 
 function renderPreview(){
   const keys = Object.keys(state.saved);
@@ -289,7 +350,6 @@ function renderPreview(){
     return;
   }
 
-  // Sort by cart type then area
   keys.sort((a,b)=> a.localeCompare(b));
 
   for(const key of keys){
@@ -320,8 +380,8 @@ function renderPreview(){
     const edit = document.createElement("button");
     edit.className = "btn btn--primary";
     edit.textContent = "Edit";
+    edit.type = "button";
     edit.addEventListener("click", ()=>{
-      // jump to entry with this key selected
       state.cartType = ct;
       state.area = area;
       state.lastTouchedKey = key;
@@ -340,6 +400,7 @@ function renderPreview(){
     const del = document.createElement("button");
     del.className = "btn btn--ghost";
     del.textContent = "Delete";
+    del.type = "button";
     del.addEventListener("click", ()=>{
       delete state.saved[key];
       saveState();
@@ -360,7 +421,7 @@ function renderPreview(){
 }
 
 /* =========================
-   5) SAVE LOGIC
+   SAVE LOGIC
    ========================= */
 
 function buildEntryPayload(){
@@ -368,13 +429,11 @@ function buildEntryPayload(){
     cartType: state.cartType,
     area: state.area,
 
-    // Supply sticker
     supplyFirst: supplyFirst.value.trim(),
     supplyDate: supplyDate.value.trim(),
     supplyDone: supplyDone.value.trim(),
     supplyTech: supplyTech.value.trim(),
 
-    // Drug sticker
     drugFirstExp: drugFirstExp.value.trim(),
     drugName: drugName.value.trim(),
     drugLock: drugLock.value.trim(),
@@ -397,28 +456,8 @@ function validateBeforeSave(){
   return true;
 }
 
-saveBtn.addEventListener("click", ()=>{
-  if(!validateBeforeSave()) return;
-
-  const key = currentKey();
-  const payload = buildEntryPayload();
-
-  state.saved[key] = payload;
-  state.lastTouchedKey = key;
-  saveState();
-
-  updateSavedIndicators();
-  previewCount.textContent = String(countSaved());
-  showToast("✅ Saved");
-});
-
-clearBtn.addEventListener("click", ()=>{
-  clearInputs();
-  showToast("Cleared fields");
-});
-
 /* =========================
-   6) SUBMIT TO FIREBASE
+   SUBMIT TO FIREBASE
    ========================= */
 
 async function submitToFirebase(){
@@ -438,7 +477,6 @@ async function submitToFirebase(){
 
   footerStatus.textContent = "Submitting…";
 
-  // One “submission” document containing all entries
   const entries = keys.map(k => state.saved[k]);
 
   const docPayload = {
@@ -453,32 +491,15 @@ async function submitToFirebase(){
   footerStatus.textContent = "Submitted ✅";
   showToast("✅ Submitted to Firebase");
 
-  // OPTIONAL: wipe local after submit
-  // If you prefer to keep local copies, comment these 3 lines out:
+  // Wipe local after submit (pilot-friendly). Comment these lines to keep local archive.
   state.saved = {};
   saveState();
   previewCount.textContent = "0";
   renderPreview();
 }
 
-submitBtn.addEventListener("click", ()=>{
-  submitToFirebase().catch((e)=>{
-    console.warn(e);
-    footerStatus.textContent = "Submit failed";
-    showToast("Submit failed — check Firebase rules/config");
-  });
-});
-
-wipeAllBtn.addEventListener("click", ()=>{
-  state.saved = {};
-  saveState();
-  previewCount.textContent = "0";
-  renderPreview();
-  showToast("Wiped local saved items");
-});
-
 /* =========================
-   7) DROPDOWN FLOW EVENTS
+   EVENTS
    ========================= */
 
 deptBtn.addEventListener("click", ()=>{
@@ -497,7 +518,6 @@ cartTypeSelect.addEventListener("change", ()=>{
   hydrateAreaDropdown();
   areaSelect.value = "";
   updateSavedIndicators();
-  // don’t auto-clear inputs; user may be switching—up to them
 });
 
 areaSelect.addEventListener("change", ()=>{
@@ -506,21 +526,33 @@ areaSelect.addEventListener("change", ()=>{
 
   updateSavedIndicators();
 
-  // If saved exists, load it; if not, keep current values
   const key = currentKey();
   if(state.saved[key]){
     setInputsFromSavedIfExists();
     showToast("Loaded saved sticker");
-  }else{
-    // If switching to a new area, it’s safer to clear to avoid accidental cross-entry
+  } else {
     clearInputs();
     showToast("New area — fields cleared");
   }
 });
 
-/* =========================
-   8) VIEW NAV
-   ========================= */
+saveBtn.addEventListener("click", ()=>{
+  if(!validateBeforeSave()) return;
+
+  const key = currentKey();
+  state.saved[key] = buildEntryPayload();
+  state.lastTouchedKey = key;
+  saveState();
+
+  updateSavedIndicators();
+  previewCount.textContent = String(countSaved());
+  showToast("✅ Saved");
+});
+
+clearBtn.addEventListener("click", ()=>{
+  clearInputs();
+  showToast("Cleared fields");
+});
 
 previewBtn.addEventListener("click", ()=>{
   setView("preview");
@@ -532,15 +564,33 @@ entryBtn.addEventListener("click", ()=>{
 });
 
 btnBack.addEventListener("click", ()=>{
-  // back behaves same as “Back to Entry”
   setView("entry");
 });
 
+submitBtn.addEventListener("click", ()=>{
+  submitToFirebase().catch((e)=>{
+    console.warn(e);
+    footerStatus.textContent = "Submit failed";
+    showToast("Submit failed — check Firebase rules/config");
+  });
+});
+
+wipeAllBtn.addEventListener("click", ()=>{
+  state.saved = {};
+  saveState();
+  previewCount.textContent = "0";
+  renderPreview();
+  showToast("Wiped local saved items");
+});
+
 /* =========================
-   9) BOOT
+   BOOT
    ========================= */
 
 function boot(){
+  setupPinGate();       // MUST be first
+  setupLockButton();    // 🔒 Lock button
+
   initFirebase();
   setSyncUI();
   window.addEventListener("online", setSyncUI);
