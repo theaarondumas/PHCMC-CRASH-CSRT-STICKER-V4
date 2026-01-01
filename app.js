@@ -8,6 +8,8 @@
    - Submit -> Firestore (Anonymous Auth, runs ONLY on submit)
    ============================================================ */
 
+const APP_VERSION = "2025-12-31_authBadgeFix_v1"; // <-- helps confirm you’re running latest
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
 import {
   getFirestore,
@@ -124,7 +126,9 @@ const state = {
   entries: [],
   editingIndex: null,
   authReady: false,
-  user: null
+  user: null,
+  authListenerBound: false,
+  submitInFlight: false
 };
 
 /* =========================
@@ -144,6 +148,18 @@ function setSync(text, ok = true) {
   el.syncText.textContent = text;
   el.syncDot.style.opacity = "1";
   el.syncDot.style.filter = ok ? "none" : "grayscale(1)";
+}
+
+/** Single source of truth for the badge */
+function setAuthBadgeFromState() {
+  // If we haven't checked auth yet, avoid scary messaging
+  if (!state.authReady) return setSync("Ready", true);
+
+  // Auth checked: show accurate status
+  if (state.user) return setSync("Auth OK", true);
+
+  // No user (not signed in yet). This is NOT blocked—just idle.
+  return setSync("Ready", true);
 }
 
 function loadLS() {
@@ -211,7 +227,6 @@ function populateAreasForCartType(cartType) {
 }
 
 function setDeptBtnLabel(labelText) {
-  // Safely update ONLY the text portion of the button while keeping the badge span
   const textNode = Array.from(el.deptBtn.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
   if (textNode) textNode.textContent = `${labelText} `;
   else el.deptBtn.insertBefore(document.createTextNode(`${labelText} `), el.deptBtn.firstChild);
@@ -408,42 +423,101 @@ const auth = getAuth(app);
 
 enableIndexedDbPersistence(db).catch(() => {});
 
-function ensureAnonAuthOnce() {
-  // Do not spam signIn attempts; run once on submit
-  return new Promise((resolve) => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        state.user = user;
-        state.authReady = true;
-        unsub?.();
-        return resolve(true);
-      }
-      try {
-        await signInAnonymously(auth);
-        // auth state listener will fire again with user
-      } catch (e) {
-        console.error("Anon auth failed:", e);
-        return resolve({ ok: false, err: e });
-      }
-    });
+/** Bind ONE auth listener so the badge always tells the truth */
+function bindAuthStatusListenerOnce() {
+  if (state.authListenerBound) return;
+  state.authListenerBound = true;
+
+  onAuthStateChanged(auth, (user) => {
+    state.user = user || null;
+    state.authReady = true;
+    setAuthBadgeFromState();
   });
+}
+
+function normalizeAuthError(e) {
+  const code = e?.code || "";
+  const msg = e?.message || "";
+
+  // Common "signups blocked / provider disabled" codes you may see:
+  // auth/operation-not-allowed
+  // auth/admin-restricted-operation
+  // auth/unauthorized-domain
+  // auth/internal-error
+  const blocked =
+    code.includes("signup") ||
+    code.includes("operation-not-allowed") ||
+    code.includes("admin-restricted-operation");
+
+  return { code, msg, blocked };
+}
+
+async function ensureAnonAuthOnce() {
+  // If already signed in, done.
+  if (auth.currentUser) {
+    state.user = auth.currentUser;
+    state.authReady = true;
+    setAuthBadgeFromState();
+    return { ok: true };
+  }
+
+  // Try signing in once, then wait for auth state to reflect it.
+  try {
+    await signInAnonymously(auth);
+
+    // Wait for auth state to become available (max 5s)
+    const ok = await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(false), 5000);
+      const unsub = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          clearTimeout(t);
+          unsub?.();
+          resolve(true);
+        }
+      });
+    });
+
+    state.user = auth.currentUser || null;
+    state.authReady = true;
+    setAuthBadgeFromState();
+
+    return { ok };
+  } catch (e) {
+    const { code, blocked } = normalizeAuthError(e);
+    console.error("Anon auth failed:", e);
+
+    state.user = null;
+    state.authReady = true;
+
+    // Only show "Auth blocked" when it's truly blocked.
+    setSync("Auth blocked", false);
+
+    return { ok: false, err: e, code, blocked };
+  }
 }
 
 async function submitToFirebase() {
   if (!state.unlocked) return toast("Locked. Enter PIN first.");
   if (!state.entries.length) return toast("Nothing to submit.");
+  if (state.submitInFlight) return;
 
+  state.submitInFlight = true;
+
+  // During submit, we show progress states explicitly.
   setSync("Signing in…", true);
-  const res = await ensureAnonAuthOnce();
-  if (res !== true) {
-    const e = res?.err;
-    setSync("Auth blocked", false);
-    toast(`Auth blocked: ${e?.code || ""}`.trim());
 
-    // This specific error means signups are blocked in the project
-    if (e?.code?.includes("signup-are-blocked")) {
-      toast("Fix: enable User sign-up in Google Cloud Identity Platform OR disable signup blocking.");
+  const res = await ensureAnonAuthOnce();
+  if (!res.ok) {
+    const code = res.code || res.err?.code || "";
+    toast(`Auth blocked: ${code}`.trim());
+
+    if (res.blocked) {
+      toast("Fix: Enable Anonymous provider in Firebase Auth (Sign-in method). If using Identity Platform signup blocking, allow new users.");
+    } else if (code.includes("unauthorized-domain")) {
+      toast("Fix: Add your domain in Firebase Auth → Settings → Authorized domains.");
     }
+
+    state.submitInFlight = false;
     return;
   }
 
@@ -458,12 +532,18 @@ async function submitToFirebase() {
 
   try {
     await setDoc(doc(db, SUBMISSIONS_COLLECTION, submissionId), payload);
+
+    // After a real successful write, show success AND the auth listener will keep it accurate later.
     setSync("Submitted ✅", true);
     toast("Submitted to Firebase ✅");
   } catch (e) {
     console.error("Firestore submit error:", e);
     setSync("Submit failed", false);
     toast(`Submit failed: ${e.code || ""}`.trim());
+  } finally {
+    state.submitInFlight = false;
+    // After a moment, return badge to truth-driven state (Auth OK / Ready)
+    setTimeout(() => setAuthBadgeFromState(), 1200);
   }
 }
 
@@ -551,6 +631,8 @@ function bind() {
    Boot
    ========================= */
 function init() {
+  console.log("APP_VERSION:", APP_VERSION);
+
   loadLS();
 
   if (state.unlocked) {
@@ -571,7 +653,13 @@ function init() {
 
   updateSelectionMeta();
   updatePreviewCount();
+
+  // Start badge in a calm default state.
   setSync("Ready", true);
+
+  // IMPORTANT: bind auth listener so the badge always reflects reality.
+  // (Does NOT sign in at boot—just listens.)
+  bindAuthStatusListenerOnce();
 
   bind();
   goEntry();
