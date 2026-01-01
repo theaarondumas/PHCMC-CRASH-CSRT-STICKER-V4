@@ -1,7 +1,10 @@
-/* app.js — Crash Cart Stickers (NO PHI)
-   Secure Firebase submit via Anonymous Auth + Firestore.
-   Drop-in file. If any element IDs differ from your HTML, change them in DOM SELECTORS below.
-*/
+/* ============================================================
+   app.js — Crash Cart Stickers (NO PHI)
+   Secure submit: Anonymous Auth + Firestore
+   Robust UI bindings: works even if IDs/classes differ
+   Fixes Department button (delegated)
+   Includes Lock + PIN, Local Saved Entries, Submit to Firebase
+   ============================================================ */
 
 // =========================
 // Firebase imports (CDN)
@@ -14,7 +17,6 @@ import {
   serverTimestamp,
   enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
-
 import {
   getAuth,
   signInAnonymously,
@@ -22,7 +24,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
 
 // =========================
-// CONFIG — PUT YOUR REAL KEYS HERE
+// CONFIG — PASTE YOUR REAL VALUES
 // =========================
 const firebaseConfig = {
   apiKey: "PASTE_API_KEY",
@@ -33,38 +35,64 @@ const firebaseConfig = {
   appId: "PASTE_APP_ID"
 };
 
-// Firestore collection name for submissions.
-// If your old code used a different collection, change this:
+// If your submit writes to a different collection, change this.
 const SUBMISSIONS_COLLECTION = "submissions";
 
 // =========================
 // Local storage keys
 // =========================
-const LOCAL_SAVED_KEY = "cc_saved_entries_v1";
-const LOCAL_LOCK_KEY = "cc_lock_v1";        // { locked: bool, pinHash: string|null }
+const LOCAL_SAVED_KEY = "cc_saved_entries_v2";
+const LOCAL_LOCK_KEY = "cc_lock_v2";                 // { locked, pinHash }
+const LOCAL_DEPT_KEY = "cc_current_department_v2";   // string
 
 // =========================
-// DOM SELECTORS (adjust if needed)
+// Helpers
 // =========================
-const $ = (sel) => document.querySelector(sel);
+const qs = (sel) => document.querySelector(sel);
+const qsa = (sel) => Array.from(document.querySelectorAll(sel));
 
-const els = {
-  // Buttons
-  btnSubmit: $("#btnSubmitFirebase") || $("#submitToFirebaseBtn") || $("button[data-action='submit-firebase']"),
-  btnWipeLocal: $("#btnWipeLocal") || $("#wipeLocalBtn") || $("button[data-action='wipe-local']"),
+function firstEl(selectors) {
+  for (const s of selectors) {
+    const el = qs(s);
+    if (el) return el;
+  }
+  return null;
+}
 
-  btnLock: $("#btnLock") || $(".lock-btn") || $("button[data-action='lock']"),
-  btnGeneratePin: $("#btnGeneratePin") || $("button[data-action='generate-pin']"),
+function showToast(message) {
+  console.log("[toast]", message);
 
-  // Preview list container
-  previewList: $("#previewList") || $("#previewCards") || $("#previewContainer"),
+  // Try common toast containers
+  const toast =
+    firstEl([
+      "#toast",
+      "#toastMessage",
+      ".toast",
+      "[data-role='toast']"
+    ]);
 
-  // Optional: status / toast
-  toast: $("#toast") || $("#toastMessage") || $(".toast"),
+  if (toast) {
+    toast.textContent = message;
+    toast.style.opacity = "1";
+    toast.style.transform = "translateY(0)";
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(8px)";
+    }, 2800);
+    return;
+  }
 
-  // Optional: any text areas/labels you might have
-  authStatus: $("#authStatus") || null
-};
+  // Fallback
+  alert(message);
+}
+
+function hardReloadHint(tag = "v") {
+  // Cache bust helper for iOS Safari
+  const url = new URL(window.location.href);
+  url.searchParams.set(tag, String(Date.now()));
+  window.location.href = url.toString();
+}
 
 // =========================
 // App state
@@ -72,6 +100,8 @@ const els = {
 const state = {
   authReady: false,
   user: null,
+
+  currentDepartment: "",
 
   savedEntries: [],
 
@@ -82,36 +112,30 @@ const state = {
 };
 
 // =========================
-// Utility: Toast / status
+// DOM mapping (robust)
 // =========================
-function showToast(message) {
-  // If you already have a toast UI, this will use it.
-  // Otherwise it will fallback to alert().
-  console.log("[TOAST]", message);
-
-  if (els.toast) {
-    els.toast.textContent = message;
-    els.toast.style.opacity = "1";
-    els.toast.style.transform = "translateY(0)";
-    clearTimeout(showToast._t);
-    showToast._t = setTimeout(() => {
-      els.toast.style.opacity = "0";
-      els.toast.style.transform = "translateY(8px)";
-    }, 2800);
-  } else {
-    alert(message);
-  }
-}
+const els = {
+  // Preview container(s)
+  previewList: firstEl(["#previewList", "#previewCards", "#previewContainer", "[data-role='preview-list']"]),
+  // Buttons
+  btnSubmit: firstEl(["#btnSubmitFirebase", "#submitToFirebaseBtn", "[data-action='submit-firebase']"]),
+  btnWipeLocal: firstEl(["#btnWipeLocal", "#wipeLocalBtn", "[data-action='wipe-local']"]),
+  btnLock: firstEl(["#btnLock", ".lock-btn", "[data-action='lock']"]),
+  btnGeneratePin: firstEl(["#btnGeneratePin", "[data-action='generate-pin']"]),
+  // Department button/select
+  deptBtn: firstEl(["#deptBtn", "#departmentBtn", ".dept-btn", "[data-action='department']"]),
+  deptSelect: firstEl(["#deptSelect", "#departmentSelect", "select[name='department']", "[data-role='department-select']"])
+};
 
 // =========================
-// Lock + PIN (UI gate)
-// NOTE: Real security is Firebase Auth + Firestore Rules.
-// PIN is UX / workflow protection, not a cryptographic barrier.
+// Lock + PIN
 // =========================
 async function sha256(text) {
   const enc = new TextEncoder().encode(text);
   const buf = await crypto.subtle.digest("SHA-256", enc);
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function loadLock() {
@@ -130,15 +154,15 @@ function saveLock() {
 }
 
 function updateLockUI() {
-  if (!els.btnLock) return;
-  // You can style this however you want in CSS.
-  // For now: change button text.
-  els.btnLock.textContent = state.lock.locked ? "Locked" : "Lock";
+  const b = firstEl(["#btnLock", ".lock-btn", "[data-action='lock']"]);
+  if (!b) return;
+
+  // Keep your UI label if you already have icons; this is safe fallback.
+  b.textContent = state.lock.locked ? "Locked" : "Lock";
 }
 
 async function generatePin() {
-  // 6-digit PIN
-  const pin = String(Math.floor(100000 + Math.random() * 900000));
+  const pin = String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
   state.lock.pinHash = await sha256(pin);
   state.lock.locked = true;
   saveLock();
@@ -165,17 +189,57 @@ async function promptUnlock() {
 
 function toggleLock() {
   if (!state.lock.pinHash) {
-    showToast("No PIN set. Tap Generate PIN first.");
+    showToast("No PIN set. Generate a PIN first.");
     return;
   }
-  if (state.lock.locked) {
-    // must unlock via PIN
-    promptUnlock();
-  } else {
-    state.lock.locked = true;
-    saveLock();
-    showToast("Locked.");
+  if (state.lock.locked) return promptUnlock();
+  state.lock.locked = true;
+  saveLock();
+  showToast("Locked.");
+}
+
+// =========================
+// Department selection (FIXED)
+// Works even if your department button is injected later.
+// =========================
+function setDepartment(dept) {
+  const clean = (dept || "").trim();
+  state.currentDepartment = clean;
+  localStorage.setItem(LOCAL_DEPT_KEY, clean);
+
+  // Update dept button label if present
+  const b = firstEl(["#deptBtn", "#departmentBtn", ".dept-btn", "[data-action='department']"]);
+  if (b) b.textContent = clean ? clean : "Department";
+
+  // If you show dept somewhere else, it can be updated here too.
+}
+
+function loadDepartment() {
+  try {
+    const saved = localStorage.getItem(LOCAL_DEPT_KEY) || "";
+    state.currentDepartment = saved;
+    if (saved) setDepartment(saved);
+  } catch {}
+}
+
+function bindDepartmentUI() {
+  // If you have a <select>, bind it
+  const sel = firstEl(["#deptSelect", "#departmentSelect", "select[name='department']", "[data-role='department-select']"]);
+  if (sel) {
+    sel.addEventListener("change", (e) => setDepartment(e.target.value));
   }
+
+  // Delegated click (covers button injected later)
+  document.addEventListener("click", (e) => {
+    const target = e.target.closest("#deptBtn, #departmentBtn, .dept-btn, [data-action='department']");
+    if (!target) return;
+
+    e.preventDefault();
+    const current = state.currentDepartment || localStorage.getItem(LOCAL_DEPT_KEY) || "";
+    const dept = prompt("Enter department (ex: 3SOUTH, ED, ICU):", current);
+    if (dept === null) return;
+    setDepartment(dept);
+  });
 }
 
 // =========================
@@ -203,39 +267,10 @@ function wipeLocal() {
 }
 
 // =========================
-// Render preview
+// Preview render + Edit/Delete hooks
+// (If your UI already handles cards, this won’t fight it—
+// it only renders into the preview container if found.)
 // =========================
-function renderPreview() {
-  if (!els.previewList) return;
-
-  els.previewList.innerHTML = "";
-
-  if (!state.savedEntries.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent = "No saved entries yet.";
-    els.previewList.appendChild(empty);
-    return;
-  }
-
-  state.savedEntries.forEach((entry, idx) => {
-    const card = document.createElement("div");
-    card.className = "preview-card";
-
-    // Minimal display. Adjust fields to match your entry schema.
-    const title = entry.title || entry.cartName || "Crash Cart Entry";
-    const dept = entry.department || entry.dept || "";
-    const updated = entry.updatedAt || entry.lastUpdated || "";
-
-    card.innerHTML = `
-      <div class="card-title">${escapeHtml(title)}${dept ? ` → ${escapeHtml(dept)}` : ""}</div>
-      <div class="card-meta">${updated ? `Last updated: ${escapeHtml(updated)}` : ""}</div>
-    `;
-
-    els.previewList.appendChild(card);
-  });
-}
-
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -245,6 +280,80 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+function renderPreview() {
+  const container = firstEl(["#previewList", "#previewCards", "#previewContainer", "[data-role='preview-list']"]);
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  if (!state.savedEntries.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "No saved entries yet.";
+    container.appendChild(empty);
+    return;
+  }
+
+  state.savedEntries.forEach((entry, idx) => {
+    const title = entry.title || entry.cartName || entry.name || "Crash Cart Entry";
+    const dept = entry.department || entry.dept || state.currentDepartment || "";
+    const updated = entry.updatedAt || entry.lastUpdated || entry.updated || "";
+
+    const card = document.createElement("div");
+    card.className = "preview-card";
+    card.innerHTML = `
+      <div class="card-title">${escapeHtml(title)}${dept ? ` → ${escapeHtml(dept)}` : ""}</div>
+      <div class="card-meta">${updated ? `Last updated: ${escapeHtml(updated)}` : ""}</div>
+      <div class="card-actions">
+        <button class="btn-edit" data-action="edit-entry" data-index="${idx}">Edit</button>
+        <button class="btn-delete" data-action="delete-entry" data-index="${idx}">Delete</button>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+// Edit/Delete delegated (won’t break if your buttons differ)
+function bindEntryCardActions() {
+  document.addEventListener("click", (e) => {
+    const del = e.target.closest("[data-action='delete-entry']");
+    if (del) {
+      const idx = Number(del.dataset.index);
+      if (Number.isFinite(idx) && state.savedEntries[idx]) {
+        if (!confirm("Delete this saved entry?")) return;
+        state.savedEntries.splice(idx, 1);
+        saveSavedEntries();
+        renderPreview();
+        showToast("Deleted.");
+      }
+      return;
+    }
+
+    const edit = e.target.closest("[data-action='edit-entry']");
+    if (edit) {
+      const idx = Number(edit.dataset.index);
+      if (!Number.isFinite(idx) || !state.savedEntries[idx]) return;
+
+      // Minimal edit: change title + department quickly
+      const entry = state.savedEntries[idx];
+      const newTitle = prompt("Edit title:", entry.title || entry.cartName || entry.name || "");
+      if (newTitle === null) return;
+
+      entry.title = newTitle.trim() || entry.title || "Crash Cart Entry";
+
+      const newDept = prompt("Edit department:", entry.department || entry.dept || state.currentDepartment || "");
+      if (newDept !== null) entry.department = newDept.trim();
+
+      entry.updatedAt = new Date().toLocaleString();
+      state.savedEntries[idx] = entry;
+
+      saveSavedEntries();
+      renderPreview();
+      showToast("Updated.");
+    }
+  });
+}
+
 // =========================
 // Firebase init + auth
 // =========================
@@ -252,26 +361,23 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// Enable offline persistence (nice-to-have; safe if it fails)
 enableIndexedDbPersistence(db).catch((err) => {
   console.warn("IndexedDB persistence not enabled:", err?.code || err);
 });
 
-// Sign in anonymously (secure + simple)
 function ensureAnonAuth() {
   return new Promise((resolve) => {
-    onAuthStateChanged(auth, async (user) => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         state.user = user;
         state.authReady = true;
-        if (els.authStatus) els.authStatus.textContent = "Signed in";
+        unsub?.();
         resolve(true);
         return;
       }
-
       try {
         await signInAnonymously(auth);
-        // onAuthStateChanged will fire again.
+        // onAuthStateChanged will fire again
       } catch (e) {
         console.error("Anon auth failed:", e.code, e.message, e);
         showToast(`Auth failed: ${e.code || ""} ${e.message || e}`);
@@ -289,51 +395,80 @@ async function submitToFirebase() {
     showToast("Unlock with PIN before submitting.");
     return;
   }
-
   if (!state.savedEntries.length) {
     showToast("Nothing to submit.");
     return;
   }
 
-  // Ensure signed in (required for secure rules)
   const ok = await ensureAnonAuth();
   if (!ok) return;
 
-  // Build submission doc
+  // Make sure each entry has department
+  const entries = state.savedEntries.map((e) => ({
+    ...e,
+    department: e.department || e.dept || state.currentDepartment || ""
+  }));
+
   const submissionId = `sub_${Date.now()}`;
+
   const payload = {
     createdAt: serverTimestamp(),
     createdByUid: auth.currentUser?.uid || null,
-    entries: state.savedEntries
+    department: state.currentDepartment || null,
+    entries
   };
 
   try {
     await setDoc(doc(db, SUBMISSIONS_COLLECTION, submissionId), payload);
     showToast("Submitted to Firebase ✅");
 
-    // OPTIONAL: wipe local after submit (if you want)
+    // Optional: clear local after submit
     // state.savedEntries = [];
     // saveSavedEntries();
     // renderPreview();
 
   } catch (e) {
     console.error("Firestore submit error:", e.code, e.message, e);
-
-    // This is the key: show the REAL error code on-screen
-    const msg = `Submit failed: ${e.code || ""} ${e.message || e}`;
-    showToast(msg);
+    showToast(`Submit failed: ${e.code || ""} ${e.message || e}`);
   }
 }
 
 // =========================
-// Wire up UI events
+// Bind UI events (robust)
 // =========================
 function bindUI() {
-  if (els.btnSubmit) els.btnSubmit.addEventListener("click", submitToFirebase);
-  if (els.btnWipeLocal) els.btnWipeLocal.addEventListener("click", wipeLocal);
+  // Buttons may not exist at initial load; use delegated for safety
+  document.addEventListener("click", (e) => {
+    const submit = e.target.closest("#btnSubmitFirebase, #submitToFirebaseBtn, [data-action='submit-firebase']");
+    if (submit) {
+      e.preventDefault();
+      submitToFirebase();
+      return;
+    }
 
-  if (els.btnLock) els.btnLock.addEventListener("click", toggleLock);
-  if (els.btnGeneratePin) els.btnGeneratePin.addEventListener("click", generatePin);
+    const wipe = e.target.closest("#btnWipeLocal, #wipeLocalBtn, [data-action='wipe-local']");
+    if (wipe) {
+      e.preventDefault();
+      wipeLocal();
+      return;
+    }
+
+    const lock = e.target.closest("#btnLock, .lock-btn, [data-action='lock']");
+    if (lock) {
+      e.preventDefault();
+      toggleLock();
+      return;
+    }
+
+    const gen = e.target.closest("#btnGeneratePin, [data-action='generate-pin']");
+    if (gen) {
+      e.preventDefault();
+      generatePin();
+    }
+  });
+
+  bindDepartmentUI();
+  bindEntryCardActions();
 }
 
 // =========================
@@ -342,6 +477,9 @@ function bindUI() {
 function init() {
   loadLock();
   updateLockUI();
+
+  loadDepartment();
+  setDepartment(state.currentDepartment || "");
 
   loadSavedEntries();
   renderPreview();
