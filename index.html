@@ -7,11 +7,38 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+
+  <!-- PIN GATE -->
+  <div id="pinGate" class="pinGate">
+    <div class="pinCard">
+      <div class="pinTitle">Enter Access PIN</div>
+      <div class="pinSub">Crash Cart Check — authorized staff only</div>
+
+      <input
+        id="pinInput"
+        class="pinInput"
+        type="password"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        maxlength="8"
+        placeholder="••••••"
+        autocomplete="off"
+      />
+
+      <button id="pinUnlockBtn" class="pinBtn" type="button">Unlock</button>
+      <div id="pinError" class="pinError" aria-live="polite"></div>
+
+      <div class="pinHint">
+        If you don’t have the PIN, contact your lead.
+      </div>
+    </div>
+  </div>
+
   <div class="app">
 
     <header class="topbar">
       <div class="topbar__left">
-        <button id="btnBack" class="btn btn--ghost" hidden>← Back</button>
+        <button id="btnBack" class="btn btn--ghost" hidden type="button">← Back</button>
       </div>
 
       <div class="topbar__center">
@@ -20,7 +47,8 @@
       </div>
 
       <div class="topbar__right">
-        <div class="syncchip">
+        <button id="lockBtn" class="lockBtn" type="button" aria-label="Lock">🔒 Lock</button>
+        <div class="syncchip" aria-label="Sync status">
           <span class="dot" id="syncDot"></span>
           <span id="syncText">…</span>
         </div>
@@ -35,12 +63,12 @@
 
         <!-- Selection Row -->
         <div class="selectRow">
-          <button id="deptBtn" class="btn btn--primary deptBtn">
+          <button id="deptBtn" class="btn btn--primary deptBtn" type="button">
             DEPARTMENT ▾
             <span id="savedBadge" class="savedBadge" hidden>✅ SAVED</span>
           </button>
 
-          <button id="previewBtn" class="btn btn--ghost">
+          <button id="previewBtn" class="btn btn--ghost" type="button">
             Preview / Submit
             <span id="previewCount" class="countPill">0</span>
           </button>
@@ -70,7 +98,7 @@
 
           <div class="row row--space">
             <div class="meta" id="selectedKeyMeta">Selected: —</div>
-            <button id="closeDeptCard" class="btn btn--ghost">Close</button>
+            <button id="closeDeptCard" class="btn btn--ghost" type="button">Close</button>
           </div>
         </div>
 
@@ -147,8 +175,8 @@
         </section>
 
         <div class="actions">
-          <button id="saveBtn" class="btn btn--primary btn--xl">SAVE (✅ will appear)</button>
-          <button id="clearBtn" class="btn btn--ghost">Clear Fields</button>
+          <button id="saveBtn" class="btn btn--primary btn--xl" type="button">SAVE (✅ will appear)</button>
+          <button id="clearBtn" class="btn btn--ghost" type="button">Clear Fields</button>
         </div>
 
         <div class="meta">
@@ -163,7 +191,7 @@
       <div class="panel">
         <div class="row row--space">
           <h2 class="h2">Preview Stickers</h2>
-          <button id="entryBtn" class="btn btn--ghost">Back to Entry</button>
+          <button id="entryBtn" class="btn btn--ghost" type="button">Back to Entry</button>
         </div>
 
         <div class="meta" id="previewMeta">0 saved.</div>
@@ -171,8 +199,8 @@
         <div id="previewList" class="previewList"></div>
 
         <div class="actions">
-          <button id="submitBtn" class="btn btn--primary btn--xl">SUBMIT TO FIREBASE</button>
-          <button id="wipeAllBtn" class="btn btn--ghost">Wipe All Saved (local)</button>
+          <button id="submitBtn" class="btn btn--primary btn--xl" type="button">SUBMIT TO FIREBASE</button>
+          <button id="wipeAllBtn" class="btn btn--ghost" type="button">Wipe All Saved (local)</button>
         </div>
 
         <div class="meta">
