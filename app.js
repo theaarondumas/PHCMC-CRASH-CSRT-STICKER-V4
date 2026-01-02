@@ -1,46 +1,16 @@
 /* ============================================================
-   app.js — LOCK/PIN DISABLED (always-unlocked)
-   - Cart Type → Section → Location
-   - Cart # required
-   - ✅ completeness indicator (informational only)
-   - SAVE -> local batch
-   - PREVIEW -> Edit/Delete
-   - SUBMIT -> Firestore (one submission doc with entries array)
+   app.js — BULLETPROOF UI
+   - Department card always opens (HTML fallback + JS)
+   - 3-level dropdowns + Cart# required
+   - ✅ appears when ALL fields complete
+   - Save -> local batch
+   - Preview -> Edit/Delete
+   - Submit -> Firebase (Firebase loads ONLY when you click submit)
    ============================================================ */
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
-import {
-  getFirestore,
-  collection,
-  doc,
-  setDoc,
-  serverTimestamp
-} from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
-import {
-  getAuth,
-  signInAnonymously
-} from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+const $ = (id) => document.getElementById(id);
 
-/* =========================
-   Firebase Config
-   =========================
-   Put your REAL values here.
-   If Firebase isn't configured yet, UI still works; submit will warn.
-*/
-const firebaseConfig = {
-  apiKey: "AIzaSyB-3bjNKIf-OOcRu3HtxdsjnMugpD1lhQU",
-  authDomain: "phcmc-crash-cart.firebaseapp.com",
-  projectId: "phcmc-crash-cart",
-
-let db = null;
-let auth = null;
-try {
-  const fbApp = initializeApp(firebaseConfig);
-  db = getFirestore(fbApp);
-  auth = getAuth(fbApp);
-} catch (e) {
-  console.warn("Firebase not configured:", e);
-}
+const LOCAL_KEY = "cc_batch_entries_v3";
 
 /* =========================
    Taxonomy (3-level)
@@ -81,15 +51,18 @@ const CART_TAXONOMY = {
 };
 
 /* =========================
-   Local Storage
+   Firebase Config (PASTE YOUR REAL ONE)
    ========================= */
-const LOCAL_KEY = "cc_batch_entries_v2";
+const firebaseConfig = {
+  apiKey: "REPLACE_ME",
+  authDomain: "REPLACE_ME",
+  projectId: "REPLACE_ME",
+  // storageBucket, messagingSenderId, appId optional
+};
 
 /* =========================
-   DOM helpers
+   UI helpers
    ========================= */
-const $ = (id) => document.getElementById(id);
-
 function toast(msg, ms = 1800) {
   const el = $("toast");
   if (!el) return alert(msg);
@@ -105,15 +78,31 @@ function setSync(text, ok = true) {
 }
 
 function loadBatch() {
-  try {
-    return JSON.parse(localStorage.getItem(LOCAL_KEY) || "[]");
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || "[]"); }
+  catch { return []; }
 }
 
 function saveBatch(entries) {
   localStorage.setItem(LOCAL_KEY, JSON.stringify(entries));
+}
+
+function resetSelect(selectEl, placeholder) {
+  selectEl.innerHTML = "";
+  const opt = document.createElement("option");
+  opt.value = "";
+  opt.disabled = true;
+  opt.selected = true;
+  opt.textContent = placeholder;
+  selectEl.appendChild(opt);
+}
+
+function fillSelect(selectEl, items) {
+  items.forEach(v => {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    selectEl.appendChild(opt);
+  });
 }
 
 function normalizeCartNumber(raw) {
@@ -138,54 +127,27 @@ function escapeHtml(s) {
 function showEntryView() {
   $("viewEntry").hidden = false;
   $("viewPreview").hidden = true;
-  $("btnBack").hidden = true;
+  if ($("btnBack")) $("btnBack").hidden = true;
 }
+
 function showPreviewView() {
   $("viewEntry").hidden = true;
   $("viewPreview").hidden = false;
-  $("btnBack").hidden = false;
+  if ($("btnBack")) $("btnBack").hidden = false;
 }
 
 /* =========================
-   Dept card
+   Dropdown logic
    ========================= */
-function openDeptCard() { $("deptCard").hidden = false; }
-function closeDeptCard() { $("deptCard").hidden = true; }
-
-/* =========================
-   Dropdown helpers
-   ========================= */
-function resetSelect(selectEl, placeholder) {
-  selectEl.innerHTML = "";
-  const opt = document.createElement("option");
-  opt.value = "";
-  opt.disabled = true;
-  opt.selected = true;
-  opt.textContent = placeholder;
-  selectEl.appendChild(opt);
-}
-
-function fillSelect(selectEl, items) {
-  items.forEach(v => {
-    const opt = document.createElement("option");
-    opt.value = v;
-    opt.textContent = v;
-    selectEl.appendChild(opt);
-  });
-}
-
 function onCartTypeChange() {
   const cartType = $("cartTypeSelect").value;
-  const sectionSelect = $("sectionSelect");
-  const locationSelect = $("locationSelect");
-
   const sections = Object.keys(CART_TAXONOMY[cartType] || {});
-  resetSelect(sectionSelect, "Select section…");
-  resetSelect(locationSelect, "Select location…");
+  resetSelect($("sectionSelect"), "Select section…");
+  resetSelect($("locationSelect"), "Select location…");
+  fillSelect($("sectionSelect"), sections);
 
-  fillSelect(sectionSelect, sections);
-  sectionSelect.disabled = sections.length === 0;
-  locationSelect.disabled = true;
+  $("sectionSelect").disabled = sections.length === 0;
+  $("locationSelect").disabled = true;
 
   updateSelectedMeta();
   updateCompleteIndicator();
@@ -194,18 +156,11 @@ function onCartTypeChange() {
 function onSectionChange() {
   const cartType = $("cartTypeSelect").value;
   const section = $("sectionSelect").value;
-  const locationSelect = $("locationSelect");
-
   const locations = CART_TAXONOMY[cartType]?.[section] || [];
-  resetSelect(locationSelect, "Select location…");
-  fillSelect(locationSelect, locations);
-  locationSelect.disabled = locations.length === 0;
+  resetSelect($("locationSelect"), "Select location…");
+  fillSelect($("locationSelect"), locations);
+  $("locationSelect").disabled = locations.length === 0;
 
-  updateSelectedMeta();
-  updateCompleteIndicator();
-}
-
-function onLocationChange() {
   updateSelectedMeta();
   updateCompleteIndicator();
 }
@@ -214,35 +169,26 @@ function updateSelectedMeta() {
   const section = $("sectionSelect")?.value || "";
   const location = $("locationSelect")?.value || "";
   const cartNum = normalizeCartNumber($("cartNumberInput")?.value || "");
-
   const display = section && location ? `${section} — ${location}` : "—";
   $("selectedKeyMeta").textContent = `Selected: ${display}${cartNum ? ` | Cart ${cartNum}` : ""}`;
 }
 
 /* =========================
-   Entry draft + completeness ✅
-   "complete" = dropdowns + cart# + ALL sticker inputs filled
+   Draft + completeness ✅
    ========================= */
-function getEntryDraft() {
+function getDraft() {
   const cartType = $("cartTypeSelect")?.value || "";
   const section = $("sectionSelect")?.value || "";
   const location = $("locationSelect")?.value || "";
   const cartNumber = normalizeCartNumber($("cartNumberInput")?.value || "");
-
   const departmentDisplay = (section && location) ? `${section} — ${location}` : "";
 
   return {
-    cartType,
-    section,
-    location,
-    departmentDisplay,
-    cartNumber,
-
+    cartType, section, location, cartNumber, departmentDisplay,
     supplyFirst: $("supplyFirst")?.value || "",
     supplyDate: $("supplyDate")?.value || "",
     supplyDone: $("supplyDone")?.value || "",
     supplyTech: $("supplyTech")?.value || "",
-
     drugFirstExp: $("drugFirstExp")?.value || "",
     drugName: $("drugName")?.value || "",
     drugLock: $("drugLock")?.value || "",
@@ -267,23 +213,23 @@ function updateCompleteIndicator() {
   const hint = $("completeHint");
   if (!check || !hint) return;
 
-  const complete = isComplete(getEntryDraft());
+  const complete = isComplete(getDraft());
   check.hidden = !complete;
   hint.style.opacity = complete ? "0.55" : "1";
 }
 
 /* =========================
-   Batch (local) + edit mode
+   Batch / Preview
    ========================= */
 let batch = loadBatch();
 let editingIndex = null;
 
-function updatePreviewCount() {
+function updateCounts() {
   $("previewCount").textContent = String(batch.length);
   $("previewMeta").textContent = `${batch.length} saved.`;
 }
 
-function validateBeforeSave(e) {
+function validateForSave(e) {
   if (!e.cartType) return "Select Cart Type.";
   if (!e.section) return "Select Section.";
   if (!e.location) return "Select Location.";
@@ -293,13 +239,10 @@ function validateBeforeSave(e) {
 }
 
 function clearFields(keepDept = true) {
-  [
-    "supplyFirst","supplyDate","supplyDone","supplyTech",
-    "drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"
-  ].forEach(id => { if ($(id)) $(id).value = ""; });
+  ["supplyFirst","supplyDate","supplyDone","supplyTech","drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"]
+    .forEach(id => { if ($(id)) $(id).value = ""; });
 
   if ($("cartNumberInput")) $("cartNumberInput").value = "";
-
   if (!keepDept) {
     $("cartTypeSelect").value = "";
     resetSelect($("sectionSelect"), "Select section…");
@@ -307,19 +250,18 @@ function clearFields(keepDept = true) {
     $("sectionSelect").disabled = true;
     $("locationSelect").disabled = true;
   }
-
   editingIndex = null;
-  $("savedBadge").hidden = true;
+  if ($("savedBadge")) $("savedBadge").hidden = true;
   updateSelectedMeta();
   updateCompleteIndicator();
 }
 
 function saveEntry() {
-  const entry = getEntryDraft();
-  const err = validateBeforeSave(entry);
+  const e = getDraft();
+  const err = validateForSave(e);
   if (err) return toast(err);
 
-  const record = { ...entry, createdAtLocal: new Date().toISOString() };
+  const record = { ...e, createdAtLocal: new Date().toISOString() };
 
   if (editingIndex !== null) {
     batch[editingIndex] = record;
@@ -331,15 +273,12 @@ function saveEntry() {
   }
 
   saveBatch(batch);
-  $("savedBadge").hidden = false;
-  updatePreviewCount();
-  renderPreviewList();
+  if ($("savedBadge")) $("savedBadge").hidden = false;
+  updateCounts();
+  renderPreview();
 }
 
-/* =========================
-   Preview list render/edit/delete
-   ========================= */
-function renderPreviewList() {
+function renderPreview() {
   const list = $("previewList");
   if (!list) return;
 
@@ -349,9 +288,9 @@ function renderPreviewList() {
   }
 
   list.innerHTML = batch.map((e, idx) => {
-    const head = `${e.departmentDisplay}  |  Cart ${e.cartNumber}`;
-    const supply = `Supply: ${e.supplyFirst}  •  Date: ${e.supplyDate}  •  Done: ${e.supplyDone}  •  CS: ${e.supplyTech}`;
-    const drug = `Drug: ${e.drugFirstExp} (${e.drugName})  •  Lock: ${e.drugLock}  •  Done: ${e.drugDoneOn}  •  Init: ${e.drugInitials}`;
+    const head = `${e.departmentDisplay} | Cart ${e.cartNumber}`;
+    const supply = `Supply: ${e.supplyFirst} • Date: ${e.supplyDate} • Done: ${e.supplyDone} • CS: ${e.supplyTech}`;
+    const drug = `Drug: ${e.drugFirstExp} (${e.drugName}) • Lock: ${e.drugLock} • Done: ${e.drugDoneOn} • Init: ${e.drugInitials}`;
 
     return `
       <div class="card" style="margin-top:12px;">
@@ -367,14 +306,14 @@ function renderPreviewList() {
   }).join("");
 
   list.querySelectorAll("[data-edit]").forEach(btn => {
-    btn.addEventListener("click", () => editFromPreview(Number(btn.dataset.edit)));
+    btn.addEventListener("click", () => editEntry(Number(btn.dataset.edit)));
   });
   list.querySelectorAll("[data-del]").forEach(btn => {
-    btn.addEventListener("click", () => deleteFromPreview(Number(btn.dataset.del)));
+    btn.addEventListener("click", () => deleteEntry(Number(btn.dataset.del)));
   });
 }
 
-function editFromPreview(idx) {
+function editEntry(idx) {
   const e = batch[idx];
   if (!e) return;
 
@@ -385,7 +324,7 @@ function editFromPreview(idx) {
   onSectionChange();
 
   $("locationSelect").value = e.location;
-  onLocationChange();
+  updateSelectedMeta();
 
   $("cartNumberInput").value = (e.cartNumber || "").replace(/^#/, "");
 
@@ -401,122 +340,132 @@ function editFromPreview(idx) {
   $("drugInitials").value = e.drugInitials || "";
 
   editingIndex = idx;
-  $("savedBadge").hidden = true;
-  updateSelectedMeta();
-  updateCompleteIndicator();
+  if ($("savedBadge")) $("savedBadge").hidden = true;
 
+  // open dept card (for visibility)
+  $("deptCard").hidden = false;
+
+  updateCompleteIndicator();
   showEntryView();
   toast("Editing saved item. Press SAVE to update.");
 }
 
-function deleteFromPreview(idx) {
+function deleteEntry(idx) {
   batch.splice(idx, 1);
   saveBatch(batch);
-  updatePreviewCount();
-  renderPreviewList();
+  updateCounts();
+  renderPreview();
   toast("Deleted.");
 }
 
 /* =========================
-   Submit to Firestore (one doc with entries array)
+   Firebase — dynamic load ONLY on submit
    ========================= */
+let fb = null;
+
+async function loadFirebase() {
+  if (fb) return fb;
+
+  const [{ initializeApp }, { getFirestore, collection, doc, setDoc, serverTimestamp },
+         { getAuth, signInAnonymously }] = await Promise.all([
+    import("https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js"),
+    import("https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js"),
+    import("https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js"),
+  ]);
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
+
+  fb = { db, auth, collection, doc, setDoc, serverTimestamp, signInAnonymously };
+  return fb;
+}
+
 function deviceId() {
-  let id = localStorage.getItem("cc_device_id_v2");
+  let id = localStorage.getItem("cc_device_id_v3");
   if (!id) {
     id = (crypto?.randomUUID?.() || `dev_${Date.now()}_${Math.random()}`).toString();
-    localStorage.setItem("cc_device_id_v2", id);
+    localStorage.setItem("cc_device_id_v3", id);
   }
   return id;
 }
 
 async function submitToFirebase() {
-  if (!db || !auth) return toast("Firebase not configured yet.");
-
   if (batch.length === 0) return toast("Nothing to submit.");
 
   for (const e of batch) {
     if (!isComplete(e)) return toast("One or more saved entries is incomplete.");
-    if (!e.cartNumber) return toast("One or more entries is missing Cart #.");
   }
 
   try {
+    setSync("Loading Firebase…", true);
+    const F = await loadFirebase();
+
     setSync("Signing in…", true);
-    await signInAnonymously(auth);
+    await F.signInAnonymously(F.auth);
 
     setSync("Uploading…", true);
 
-    const submissionsCol = collection(db, "crash_cart_submissions");
+    const submissionsCol = F.collection(F.db, "crash_cart_submissions");
     const submissionId = `sub_${new Date().toISOString().replaceAll(":", "-")}_${deviceId()}`;
-    const ref = doc(submissionsCol, submissionId);
+    const ref = F.doc(submissionsCol, submissionId);
 
-    await setDoc(ref, {
+    await F.setDoc(ref, {
       deviceId: deviceId(),
       entryCount: batch.length,
       entries: batch,
-      createdAt: serverTimestamp()
+      createdAt: F.serverTimestamp()
     });
 
     batch = [];
     saveBatch(batch);
-    updatePreviewCount();
-    renderPreviewList();
+    updateCounts();
+    renderPreview();
     setSync("Submitted ✅", true);
     toast("Submitted to Firebase ✅");
+
   } catch (err) {
     console.error(err);
     setSync("Submit failed", false);
-    toast("Submit failed. Check console.");
+    toast("Submit failed. Check Firebase config/rules.");
   }
 }
 
 /* =========================
    Wire events
    ========================= */
-function wireEvents() {
-  // Dept card open/close
-  $("deptBtn")?.addEventListener("click", openDeptCard);
-  $("closeDeptCard")?.addEventListener("click", closeDeptCard);
+function wire() {
+  // Even if JS runs, keep Dept click simple
+  $("deptBtn")?.addEventListener("click", () => { $("deptCard").hidden = false; });
+  $("closeDeptCard")?.addEventListener("click", () => { $("deptCard").hidden = true; });
 
-  // Dropdowns
   $("cartTypeSelect")?.addEventListener("change", onCartTypeChange);
   $("sectionSelect")?.addEventListener("change", onSectionChange);
-  $("locationSelect")?.addEventListener("change", onLocationChange);
+  $("locationSelect")?.addEventListener("change", () => { updateSelectedMeta(); updateCompleteIndicator(); });
+  $("cartNumberInput")?.addEventListener("input", () => { updateSelectedMeta(); updateCompleteIndicator(); });
 
-  $("cartNumberInput")?.addEventListener("input", () => {
-    updateSelectedMeta();
-    updateCompleteIndicator();
-  });
+  ["supplyFirst","supplyDate","supplyDone","supplyTech","drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"]
+    .forEach(id => {
+      $(id)?.addEventListener("input", updateCompleteIndicator);
+      $(id)?.addEventListener("change", updateCompleteIndicator);
+    });
 
-  // Sticker inputs -> completeness
-  [
-    "supplyFirst","supplyDate","supplyDone","supplyTech",
-    "drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"
-  ].forEach(id => {
-    $(id)?.addEventListener("input", updateCompleteIndicator);
-    $(id)?.addEventListener("change", updateCompleteIndicator);
-  });
-
-  // Save / clear
   $("saveBtn")?.addEventListener("click", saveEntry);
   $("clearBtn")?.addEventListener("click", () => clearFields(true));
 
-  // Nav
-  $("previewBtn")?.addEventListener("click", () => {
-    showPreviewView();
-    renderPreviewList();
-  });
+  $("previewBtn")?.addEventListener("click", () => { showPreviewView(); renderPreview(); });
   $("entryBtn")?.addEventListener("click", showEntryView);
   $("btnBack")?.addEventListener("click", showEntryView);
 
-  // Submit / wipe
-  $("submitBtn")?.addEventListener("click", submitToFirebase);
   $("wipeAllBtn")?.addEventListener("click", () => {
     batch = [];
     saveBatch(batch);
-    updatePreviewCount();
-    renderPreviewList();
+    updateCounts();
+    renderPreview();
     toast("Local batch wiped.");
   });
+
+  $("submitBtn")?.addEventListener("click", submitToFirebase);
 }
 
 /* =========================
@@ -525,25 +474,21 @@ function wireEvents() {
 function init() {
   setSync("Ready", true);
 
-  // Prepare selects
+  // prepare selects
   resetSelect($("sectionSelect"), "Select section…");
   resetSelect($("locationSelect"), "Select location…");
   $("sectionSelect").disabled = true;
   $("locationSelect").disabled = true;
 
-  // Load batch
   batch = loadBatch();
-  updatePreviewCount();
-
-  // Start in entry view
+  updateCounts();
+  renderPreview();
   showEntryView();
 
-  wireEvents();
   updateSelectedMeta();
   updateCompleteIndicator();
-  renderPreviewList();
+  wire();
 
-  // Footer
   if ($("footerStatus")) $("footerStatus").textContent = "Local: ready";
 }
 
