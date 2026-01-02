@@ -66,11 +66,26 @@ const CART_TAXONOMY = {
    Firebase Config (PASTE YOUR REAL ONE)
    ========================= */
 const firebaseConfig = {
-  apiKey: "REPLACE_ME",
-  authDomain: "REPLACE_ME",
-  projectId: "REPLACE_ME",
-  // storageBucket, messagingSenderId, appId optional
+  apiKey: "AIzaSyB-3bjNKIf-OOcRu3HtxdsjnMugpD1lhQU",
+  authDomain: "phcmc-crash-cart.firebaseapp.com",
+  projectId: "phcmc-crash-cart",
+  storageBucket: "phcmc-crash-cart.firebasestorage.app",
+  messagingSenderId: "478233106614",
+  appId: "1:478233106614:web:441f55c8f401bb335aae17",
+  measurementId: "G-SQJ14G87G6"
 };
+// =========================
+// Firebase init (REQUIRED)
+// =========================
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const auth = getAuth(app);
+await signInAnonymously(auth);
+
+// Debug (remove later)
+console.log("Firebase initialized:", app?.options?.projectId);
+console.log("Signed in UID:", auth.currentUser?.uid);
 
 /* =========================
    UI helpers
