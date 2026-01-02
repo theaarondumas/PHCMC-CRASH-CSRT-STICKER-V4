@@ -5,19 +5,16 @@ import {
   addDoc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
-import {
-  getAuth,
-  signInAnonymously
-} from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
 
 /* ============================================================
-   app.js — BULLETPROOF UI (CLEAN)
-   - Department card always opens
+   app.js — BULLETPROOF UI (CLEAN + SECTION FIX)
+   - Dept card always opens (HTML fallback + JS)
    - 3-level dropdowns + Cart# required
    - ✅ appears when ALL fields complete
    - Save -> local batch
    - Preview -> Edit/Delete
-   - Submit -> Firebase (uses existing db/auth, addDoc)
+   - Submit -> Firebase (single init, addDoc)
    ============================================================ */
 
 const $ = (id) => document.getElementById(id);
@@ -28,14 +25,14 @@ const LOCAL_KEY = "cc_batch_entries_v3";
    ========================= */
 const CART_TAXONOMY = {
   ADULT_MAIN: {
-    "ER": ["ER Area", "ER Triage", "ER Room 2", "ER Main", "EDX1", "EDX2"],
-    "Imaging": ["X-Ray Dept", "X-Ray", "CT1", "CT2 / MRI", "CT Trailer", "X-Ray Trailer"],
-    "Procedural": ["Cardiology", "Cath Lab"],
-    "Specials": ["Specials Room 5", "Specials Room 6"],
-    "Surgery": ["OR", "Recovery"],
+    ER: ["ER Area", "ER Triage", "ER Room 2", "ER Main", "EDX1", "EDX2"],
+    Imaging: ["X-Ray Dept", "X-Ray", "CT1", "CT2 / MRI", "CT Trailer", "X-Ray Trailer"],
+    Procedural: ["Cardiology", "Cath Lab"],
+    Specials: ["Specials Room 5", "Specials Room 6"],
+    Surgery: ["OR", "Recovery"],
     "Mother/Baby": ["L/D Triage", "L/D Nurse Station", "Maternity"],
     "Buildings/Support": ["North Building", "Physical Therapy", "Basement", "GI Lab"],
-    "Central": ["Central Backup Carts"],
+    Central: ["Central Backup Carts"],
     "Clinic/Other": ["Urology"]
   },
   ADULT_TOWERS: {
@@ -50,14 +47,14 @@ const CART_TAXONOMY = {
     "Labor & Delivery": ["OR Hallway", "L/D Hallway"],
     "Mother/Baby": ["NICU", "Nursery", "Maternity", "Pav C NICU"],
     "2nd Floor": ["2A Overflow"],
-    "Central": ["Central Backup Carts"]
+    Central: ["Central Backup Carts"]
   },
   BROSELOW: {
     "2nd Floor": ["2C"],
-    "ER": ["ER", "EDX1", "EDX2", "ER Main"],
-    "Surgery": ["Recovery"],
+    ER: ["ER", "EDX1", "EDX2", "ER Main"],
+    Surgery: ["Recovery"],
     "North Building": ["Physical Therapy"],
-    "Central": ["Central Backup Carts"]
+    Central: ["Central Backup Carts"]
   }
 };
 
@@ -81,7 +78,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// Top-level await is OK because index.html loads app.js as type="module"
+// top-level await ok (module)
 await signInAnonymously(auth);
 
 console.log("Firebase initialized:", app?.options?.projectId);
@@ -126,7 +123,7 @@ function resetSelect(selectEl, placeholder) {
 
 function fillSelect(selectEl, items) {
   if (!selectEl) return;
-  items.forEach(v => {
+  items.forEach((v) => {
     const opt = document.createElement("option");
     opt.value = v;
     opt.textContent = v;
@@ -154,32 +151,38 @@ function escapeHtml(s) {
    Views
    ========================= */
 function showEntryView() {
-  $("viewEntry").hidden = false;
-  $("viewPreview").hidden = true;
+  if ($("viewEntry")) $("viewEntry").hidden = false;
+  if ($("viewPreview")) $("viewPreview").hidden = true;
   if ($("btnBack")) $("btnBack").hidden = true;
 }
 
 function showPreviewView() {
-  $("viewEntry").hidden = true;
-  $("viewPreview").hidden = false;
+  if ($("viewEntry")) $("viewEntry").hidden = true;
+  if ($("viewPreview")) $("viewPreview").hidden = false;
   if ($("btnBack")) $("btnBack").hidden = false;
 }
 
 /* =========================
-   Dropdown logic
+   Dropdown logic (SECTION FIX)
    ========================= */
 function onCartTypeChange() {
   const cartType = $("cartTypeSelect")?.value || "";
   const sections = Object.keys(CART_TAXONOMY[cartType] || {});
+
   resetSelect($("sectionSelect"), "Select section…");
   resetSelect($("locationSelect"), "Select location…");
   fillSelect($("sectionSelect"), sections);
 
-  if ($("sectionSelect")) $("sectionSelect").disabled = sections.length === 0;
-  if ($("locationSelect")) $("locationSelect").disabled = true;
+  // IMPORTANT: hard-enable section (Safari fix)
+  const sectionSel = $("sectionSelect");
+  const locSel = $("locationSelect");
+  if (sectionSel) sectionSel.disabled = false; // <-- FIX
+  if (locSel) locSel.disabled = true;
 
   updateSelectedMeta();
   updateCompleteIndicator();
+
+  console.log("Sections loaded:", cartType, sections);
 }
 
 function onSectionChange() {
@@ -189,10 +192,14 @@ function onSectionChange() {
 
   resetSelect($("locationSelect"), "Select location…");
   fillSelect($("locationSelect"), locations);
-  if ($("locationSelect")) $("locationSelect").disabled = locations.length === 0;
+
+  const locSel = $("locationSelect");
+  if (locSel) locSel.disabled = false;
 
   updateSelectedMeta();
   updateCompleteIndicator();
+
+  console.log("Locations loaded:", cartType, section, locations);
 }
 
 function updateSelectedMeta() {
@@ -237,17 +244,16 @@ function isComplete(e) {
     "supplyFirst","supplyDate","supplyDone","supplyTech",
     "drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"
   ];
-  return req.every(k => String(e[k] || "").trim().length > 0);
+  return req.every((k) => String(e[k] || "").trim().length > 0);
 }
 
 function updateCompleteIndicator() {
-  const check = $("headerCheck");     // ✅ icon on sticker header
-  const hint  = $("completeHint");    // "Complete entry to continue"
+  const check = $("headerCheck");
+  const hint = $("completeHint");
   if (!check) return;
 
   const complete = isComplete(getDraft());
   check.hidden = !complete;
-
   if (hint) hint.style.opacity = complete ? "0.55" : "1";
 }
 
@@ -275,7 +281,7 @@ function clearFields(keepDept = true) {
   [
     "supplyFirst","supplyDate","supplyDone","supplyTech",
     "drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"
-  ].forEach(id => { if ($(id)) $(id).value = ""; });
+  ].forEach((id) => { if ($(id)) $(id).value = ""; });
 
   if ($("cartNumberInput")) $("cartNumberInput").value = "";
 
@@ -344,11 +350,10 @@ function renderPreview() {
     `;
   }).join("");
 
-  list.querySelectorAll("[data-edit]").forEach(btn => {
+  list.querySelectorAll("[data-edit]").forEach((btn) => {
     btn.addEventListener("click", () => editEntry(Number(btn.dataset.edit)));
   });
-
-  list.querySelectorAll("[data-del]").forEach(btn => {
+  list.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", () => deleteEntry(Number(btn.dataset.del)));
   });
 }
@@ -381,7 +386,6 @@ function editEntry(idx) {
   editingIndex = idx;
   if ($("savedBadge")) $("savedBadge").hidden = true;
 
-  // open dept card for visibility
   if ($("deptCard")) $("deptCard").hidden = false;
 
   updateSelectedMeta();
@@ -399,9 +403,7 @@ function deleteEntry(idx) {
 }
 
 /* =========================
-   Firebase — submit (FIXED)
-   - Uses existing db/auth
-   - addDoc => easiest rules (create)
+   Firebase — submit (single init, addDoc)
    ========================= */
 function deviceId() {
   let id = localStorage.getItem("cc_device_id_v3");
@@ -422,7 +424,6 @@ async function submitToFirebase() {
   try {
     setSync("Checking auth…", true);
 
-    // Safari refresh sometimes drops session
     if (!auth.currentUser) {
       await signInAnonymously(auth);
       console.log("Re-signed in UID:", auth.currentUser?.uid);
@@ -439,15 +440,9 @@ async function submitToFirebase() {
       source: "Crash Cart Stickers"
     };
 
-    // ✅ addDoc writes a new doc to the collection
-    const docRef = await addDoc(
-      collection(db, "crash_cart_submissions"),
-      payload
-    );
-
+    const docRef = await addDoc(collection(db, "crash_cart_submissions"), payload);
     console.log("✅ Submit success. Doc ID:", docRef.id);
 
-    // Clear local batch AFTER upload
     batch = [];
     saveBatch(batch);
     updateCounts();
@@ -475,20 +470,29 @@ async function submitToFirebase() {
    Wire events
    ========================= */
 function wire() {
-  // Department open/close (always works)
-  $("deptBtn")?.addEventListener("click", () => { $("deptCard").hidden = false; });
-  $("closeDeptCard")?.addEventListener("click", () => { $("deptCard").hidden = true; });
+  console.log("WIRE running ✅");
 
-  $("cartTypeSelect")?.addEventListener("change", onCartTypeChange);
+  // Dept open/close always works (plus your HTML onclick fallback)
+  $("deptBtn")?.addEventListener("click", () => { if ($("deptCard")) $("deptCard").hidden = false; });
+  $("closeDeptCard")?.addEventListener("click", () => { if ($("deptCard")) $("deptCard").hidden = true; });
+
+  // CART TYPE CHANGE — hard enable section + open card
+  $("cartTypeSelect")?.addEventListener("change", (ev) => {
+    console.log("Cart type changed:", ev.target.value);
+    if ($("deptCard")) $("deptCard").hidden = false;
+    onCartTypeChange();
+    const s = $("sectionSelect");
+    if (s) s.disabled = false; // <-- HARD ENABLE (Safari fix)
+  });
+
   $("sectionSelect")?.addEventListener("change", onSectionChange);
   $("locationSelect")?.addEventListener("change", () => { updateSelectedMeta(); updateCompleteIndicator(); });
-
   $("cartNumberInput")?.addEventListener("input", () => { updateSelectedMeta(); updateCompleteIndicator(); });
 
   [
     "supplyFirst","supplyDate","supplyDone","supplyTech",
     "drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"
-  ].forEach(id => {
+  ].forEach((id) => {
     $(id)?.addEventListener("input", updateCompleteIndicator);
     $(id)?.addEventListener("change", updateCompleteIndicator);
   });
@@ -515,6 +519,7 @@ function wire() {
    Init
    ========================= */
 function init() {
+  console.log("INIT running ✅");
   setSync("Ready", true);
 
   // prepare selects
