@@ -1,4 +1,3 @@
-<!-- index.html (LOCK/PIN REMOVED — always-unlocked build) -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -7,201 +6,201 @@
   <title>Crash Cart Stickers</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
+
 <body>
 
-  <div class="app">
+<div class="app">
 
-    <header class="topbar">
-      <div class="topbar__left">
-        <button id="btnBack" class="btn btn--ghost" hidden type="button">← Back</button>
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="topbar__left">
+      <button id="btnBack" class="btn btn--ghost" hidden type="button">← Back</button>
+    </div>
+
+    <div class="topbar__center">
+      <div class="title">Crash Cart Stickers</div>
+      <div class="subtitle">Sticker entry → Preview → Submit</div>
+    </div>
+
+    <div class="topbar__right">
+      <div class="syncchip">
+        <span class="dot"></span>
+        <span>Ready</span>
+      </div>
+    </div>
+  </header>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- ================= ENTRY VIEW ================= -->
+  <main id="viewEntry" class="view">
+    <div class="panel">
+
+      <!-- ACTION ROW -->
+      <div class="selectRow">
+        <button id="deptBtn" class="btn btn--primary deptBtn" type="button">
+          DEPARTMENT ▾
+        </button>
+
+        <button id="previewBtn" class="btn btn--ghost" type="button">
+          Preview / Submit
+          <span id="previewCount" class="countPill">0</span>
+        </button>
       </div>
 
-      <div class="topbar__center">
-        <div class="title">Crash Cart Stickers</div>
-        <div class="subtitle" id="subtitle">Sticker entry → Preview → Submit</div>
-      </div>
+      <!-- ================= DEPARTMENT CARD ================= -->
+      <div id="deptCard" class="card" hidden>
 
-      <div class="topbar__right">
-        <div class="syncchip" aria-label="Sync status">
-          <span class="dot" id="syncDot"></span>
-          <span id="syncText">Ready</span>
-        </div>
-      </div>
-    </header>
-
-    <div id="toast" class="toast" hidden></div>
-
-    <!-- VIEW: ENTRY -->
-    <main id="viewEntry" class="view">
-      <div class="panel">
-
-        <!-- Selection Row -->
-        <div class="selectRow">
-          <button id="deptBtn" class="btn btn--primary deptBtn" type="button">
-            DEPARTMENT ▾
-            <span id="savedBadge" class="savedBadge" hidden>✅ SAVED</span>
-          </button>
-
-          <button id="previewBtn" class="btn btn--ghost" type="button">
-            Preview / Submit
-            <span id="previewCount" class="countPill">0</span>
-          </button>
-        </div>
-
-        <!-- Dropdown Card -->
-        <div id="deptCard" class="card" hidden>
-          <div class="grid">
-            <label class="field">
-              <span class="field__label">Cart Type</span>
-              <select id="cartTypeSelect" class="input">
-                <option value="" selected disabled>Select cart type…</option>
-                <option value="ADULT_MAIN">Adult Crash Carts (Main)</option>
-                <option value="BROSELOW">Broselow Carts</option>
-                <option value="NEONATAL">Neonatal Crash Carts</option>
-                <option value="ADULT_TOWERS">Adult Crash Carts (Towers / North Tower)</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span class="field__label">Section</span>
-              <select id="sectionSelect" class="input" disabled>
-                <option value="" selected disabled>Select section…</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span class="field__label">Location</span>
-              <select id="locationSelect" class="input" disabled>
-                <option value="" selected disabled>Select location…</option>
-              </select>
-            </label>
-          </div>
-
-          <label class="field" style="margin-top:10px;">
-            <span class="field__label">Cart # (required)</span>
-            <input id="cartNumberInput" class="input" inputmode="numeric" placeholder="e.g., 16" />
+        <div class="grid">
+          <label class="field">
+            <span class="field__label">Cart Type</span>
+            <select id="cartTypeSelect" class="input">
+              <option value="" selected disabled>Select cart type…</option>
+              <option value="ADULT_MAIN">Adult Crash Carts (Main)</option>
+              <option value="ADULT_TOWERS">Adult Crash Carts (Towers)</option>
+              <option value="NEONATAL">Neonatal Crash Carts</option>
+              <option value="BROSELOW">Broselow Carts</option>
+            </select>
           </label>
 
-          <div class="row row--space">
-            <div class="meta" id="selectedKeyMeta">Selected: —</div>
-            <button id="closeDeptCard" class="btn btn--ghost" type="button">Close</button>
-          </div>
+          <label class="field">
+            <span class="field__label">Section</span>
+            <select id="sectionSelect" class="input" disabled>
+              <option value="" selected disabled>Select section…</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Location</span>
+            <select id="locationSelect" class="input" disabled>
+              <option value="" selected disabled>Select location…</option>
+            </select>
+          </label>
         </div>
 
-        <!-- Stickers -->
-        <section class="stickerWrap">
+        <label class="field" style="margin-top:10px;">
+          <span class="field__label">Cart # (required)</span>
+          <input id="cartNumberInput" class="input" inputmode="numeric" placeholder="e.g. 45" />
+        </label>
 
-          <!-- Supply Sticker -->
-          <div class="sticker sticker--lime">
-            <div class="stickerHeader">
-              <div class="brand">
-                <div class="brand__name">Providence</div>
-                <div class="brand__sub">Holy Cross Hospital</div>
-                <div class="brand__sub">Central Department</div>
-                <div class="brand__phone">818-496-1190</div>
-              </div>
-
-              <div class="headerRight">
-                <div class="headerRight__check" id="headerCheck" hidden>✅</div>
-                <div id="completeHint" class="meta">Complete entry to continue</div>
-              </div>
-            </div>
-
-            <div class="stickerTitle">CRASH CART CHECK</div>
-            <div class="line"></div>
-
-            <div class="stickerBody">
-              <div class="stickerRow">
-                <div class="label">First supply to expire:</div>
-                <input id="supplyFirst" class="stickerInput" placeholder="—" />
-              </div>
-              <div class="stickerRow">
-                <div class="label">Date:</div>
-                <input id="supplyDate" class="stickerInput" placeholder="MM/DD/YYYY" />
-              </div>
-              <div class="stickerRow">
-                <div class="label">Check Date done:</div>
-                <input id="supplyDone" class="stickerInput" placeholder="MM/DD/YYYY" />
-              </div>
-              <div class="stickerRow">
-                <div class="label">CS tech:</div>
-                <input id="supplyTech" class="stickerInput" placeholder="Initials / Name" />
-              </div>
-            </div>
-          </div>
-
-          <!-- Drug Sticker -->
-          <div class="sticker sticker--orange">
-            <div class="stickerTitle stickerTitle--small">Crash Cart Check</div>
-            <div class="line"></div>
-
-            <div class="stickerBody">
-              <div class="stickerRow">
-                <div class="label">First Drug to Exp:</div>
-                <input id="drugFirstExp" class="stickerInput" placeholder="—" />
-              </div>
-              <div class="stickerRow">
-                <div class="label">Name of Drug:</div>
-                <input id="drugName" class="stickerInput" placeholder="—" />
-              </div>
-              <div class="stickerRow">
-                <div class="label">Lock Number:</div>
-                <input id="drugLock" class="stickerInput" placeholder="—" />
-              </div>
-              <div class="stickerRow">
-                <div class="label">Check done on:</div>
-                <input id="drugDoneOn" class="stickerInput" placeholder="MM/DD/YYYY" />
-              </div>
-              <div class="stickerRow">
-                <div class="label">Initials:</div>
-                <input id="drugInitials" class="stickerInput" placeholder="—" />
-              </div>
-            </div>
-          </div>
-
-        </section>
-
-        <div class="actions">
-          <button id="saveBtn" class="btn btn--primary btn--xl" type="button">SAVE (✅ will appear)</button>
-          <button id="clearBtn" class="btn btn--ghost" type="button">Clear Fields</button>
-        </div>
-
-        <div class="meta">
-          Tip: Select Cart Type + Section + Location + Cart # first. Save adds it to your batch for Preview / Submit.
-        </div>
-
-      </div>
-    </main>
-
-    <!-- VIEW: PREVIEW -->
-    <main id="viewPreview" class="view" hidden>
-      <div class="panel">
         <div class="row row--space">
-          <h2 class="h2">Preview Stickers</h2>
-          <button id="entryBtn" class="btn btn--ghost" type="button">Back to Entry</button>
-        </div>
-
-        <div class="meta" id="previewMeta">0 saved.</div>
-
-        <div id="previewList" class="previewList"></div>
-
-        <div class="actions">
-          <button id="submitBtn" class="btn btn--primary btn--xl" type="button">SUBMIT TO FIREBASE</button>
-          <button id="wipeAllBtn" class="btn btn--ghost" type="button">Wipe All Saved (local)</button>
-        </div>
-
-        <div class="meta">
-          Submit uploads everything as one “Submission” document (with an entries array). You can edit any item before submitting.
+          <div id="selectedKeyMeta" class="meta">Selected: —</div>
+          <button id="closeDeptCard" class="btn btn--ghost" type="button">Close</button>
         </div>
       </div>
-    </main>
 
-    <footer class="footer">
-      <small id="footerStatus">Local: ready</small>
-    </footer>
+      <!-- ================= STICKERS ================= -->
+      <section class="stickerWrap">
 
-  </div>
+        <!-- SUPPLY STICKER -->
+        <div class="sticker sticker--lime">
+          <div class="stickerHeader">
+            <div class="brand">
+              <div class="brand__name">Providence</div>
+              <div class="brand__sub">Holy Cross Hospital</div>
+              <div class="brand__sub">Central Department</div>
+              <div class="brand__phone">818-496-1190</div>
+            </div>
 
-  <script type="module" src="./app.js"></script>
+            <div class="headerRight">
+              <div id="headerCheck" hidden>✅</div>
+              <div id="completeHint" class="meta">Complete entry to continue</div>
+            </div>
+          </div>
+
+          <div class="stickerTitle">CRASH CART CHECK</div>
+          <div class="line"></div>
+
+          <div class="stickerBody">
+            <div class="stickerRow">
+              <div class="label">First supply to expire:</div>
+              <input id="supplyFirst" class="stickerInput" />
+            </div>
+            <div class="stickerRow">
+              <div class="label">Date:</div>
+              <input id="supplyDate" class="stickerInput" placeholder="MM/DD/YYYY" />
+            </div>
+            <div class="stickerRow">
+              <div class="label">Check Date done:</div>
+              <input id="supplyDone" class="stickerInput" placeholder="MM/DD/YYYY" />
+            </div>
+            <div class="stickerRow">
+              <div class="label">CS tech:</div>
+              <input id="supplyTech" class="stickerInput" />
+            </div>
+          </div>
+        </div>
+
+        <!-- DRUG STICKER -->
+        <div class="sticker sticker--orange">
+          <div class="stickerTitle stickerTitle--small">Crash Cart Check</div>
+          <div class="line"></div>
+
+          <div class="stickerBody">
+            <div class="stickerRow">
+              <div class="label">First Drug to Exp:</div>
+              <input id="drugFirstExp" class="stickerInput" />
+            </div>
+            <div class="stickerRow">
+              <div class="label">Name of Drug:</div>
+              <input id="drugName" class="stickerInput" />
+            </div>
+            <div class="stickerRow">
+              <div class="label">Lock Number:</div>
+              <input id="drugLock" class="stickerInput" />
+            </div>
+            <div class="stickerRow">
+              <div class="label">Check done on:</div>
+              <input id="drugDoneOn" class="stickerInput" placeholder="MM/DD/YYYY" />
+            </div>
+            <div class="stickerRow">
+              <div class="label">Initials:</div>
+              <input id="drugInitials" class="stickerInput" />
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ACTIONS -->
+      <div class="actions">
+        <button id="saveBtn" class="btn btn--primary btn--xl" type="button">SAVE</button>
+        <button id="clearBtn" class="btn btn--ghost" type="button">Clear Fields</button>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ================= PREVIEW VIEW ================= -->
+  <main id="viewPreview" class="view" hidden>
+    <div class="panel">
+      <div class="row row--space">
+        <h2>Preview Stickers</h2>
+        <button id="entryBtn" class="btn btn--ghost" type="button">Back to Entry</button>
+      </div>
+
+      <div id="previewMeta" class="meta">0 saved.</div>
+      <div id="previewList"></div>
+
+      <div class="actions">
+        <button id="submitBtn" class="btn btn--primary btn--xl" type="button">
+          SUBMIT TO FIREBASE
+        </button>
+        <button id="wipeAllBtn" class="btn btn--ghost" type="button">
+          Wipe All Saved (local)
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <small>Local: ready</small>
+  </footer>
+
+</div>
+
+<!-- CACHE BUSTED SCRIPT -->
+<script type="module" src="./app.js?v=100"></script>
+
 </body>
 </html>
