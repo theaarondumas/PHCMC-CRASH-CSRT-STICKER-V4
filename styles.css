@@ -352,3 +352,26 @@ body{
 .pinGate[hidden]{
   display: none !important;
 }
+
+/* === EMERGENCY TAP FIX (DO NOT MOVE) === */
+#deptBtn {
+  position: relative !important;
+  z-index: 999999 !important;
+  pointer-events: auto !important;
+}
+
+#deptCard {
+  position: relative !important;
+  z-index: 999999 !important;
+}
+
+/* Kill any invisible overlays */
+.pinGate,
+#pinGate,
+.overlay,
+.backdrop,
+.modal,
+.view,
+.panel {
+  pointer-events: auto !important;
+}
