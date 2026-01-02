@@ -89,12 +89,24 @@
             </label>
 
             <label class="field">
-              <span class="field__label">Area / Department</span>
-              <select id="areaSelect" class="input" disabled>
-                <option value="" selected disabled>Select area…</option>
+              <span class="field__label">Section</span>
+              <select id="sectionSelect" class="input" disabled>
+                <option value="" selected disabled>Select section…</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field__label">Location</span>
+              <select id="locationSelect" class="input" disabled>
+                <option value="" selected disabled>Select location…</option>
               </select>
             </label>
           </div>
+
+          <label class="field" style="margin-top:10px;">
+            <span class="field__label">Cart # (required)</span>
+            <input id="cartNumberInput" class="input" inputmode="numeric" placeholder="e.g., 16" />
+          </label>
 
           <div class="row row--space">
             <div class="meta" id="selectedKeyMeta">Selected: —</div>
@@ -117,6 +129,7 @@
 
               <div class="headerRight">
                 <div class="headerRight__check" id="headerCheck" hidden>✅</div>
+                <div id="completeHint" class="meta">Complete entry to continue</div>
               </div>
             </div>
 
@@ -180,7 +193,7 @@
         </div>
 
         <div class="meta">
-          Tip: Select Cart Type + Area first. Save creates a ✅ “completed sticker” for that location.
+          Tip: Select Cart Type + Section + Location + Cart # first. Save creates a ✅ “completed sticker” for that location.
         </div>
 
       </div>
