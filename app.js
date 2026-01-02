@@ -1,363 +1,472 @@
 /* ============================================================
-   app.js — matched to your provided index.html (IDs exact)
-   Crash Cart Stickers (NO PHI)
-   - PIN gate + Lock
-   - Department dropdown card (Cart Type + Area)
-   - Save -> local entries
-   - Preview -> Edit/Delete
-   - Submit -> Firestore (Anonymous Auth, runs ONLY on submit)
+   app.js — Crash Cart Stickers (3-level + Cart# + Batch Preview)
+   - PIN gate + Lock button
+   - Cart Type → Section → Location dropdowns
+   - Cart # required
+   - Green ✅ appears when entry is complete (informational)
+   - Save → local batch
+   - Preview → Edit/Delete
+   - Submit → Firestore (one Submission doc w/ entries array)
    ============================================================ */
-
-const APP_VERSION = "2025-12-31_authBadgeFix_v1"; // <-- helps confirm you’re running latest
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
 import {
   getFirestore,
+  collection,
   doc,
   setDoc,
-  serverTimestamp,
-  enableIndexedDbPersistence
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 import {
   getAuth,
-  signInAnonymously,
-  onAuthStateChanged
+  signInAnonymously
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
 
 /* =========================
    Firebase Config
    ========================= */
 const firebaseConfig = {
-  apiKey: "AIzaSyB-3bjNKIf-OOcRu3HtxdsjnMugpD1lhQU",
-  authDomain: "phcmc-crash-cart.firebaseapp.com",
-  projectId: "phcmc-crash-cart",
-  storageBucket: "phcmc-crash-cart.firebasestorage.app",
-  messagingSenderId: "478233106614",
-  appId: "1:478233106614:web:441f55c8f401bb335aae17",
-  measurementId: "G-SQJ14G87G6"
+  // TODO: keep your real values here
+  apiKey: "REPLACE_ME",
+  authDomain: "REPLACE_ME",
+  projectId: "REPLACE_ME",
 };
 
-const SUBMISSIONS_COLLECTION = "submissions";
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
 
 /* =========================
    Local Storage Keys
    ========================= */
-const LS = {
-  PIN_UNLOCKED: "cc_pin_unlocked_v1",
-  CURRENT_SEL: "cc_current_selection_v1",
-  ENTRIES: "cc_saved_entries_v1"
+const LOCAL_KEY = "cc_batch_entries_v1";
+const LOCAL_PIN_OK = "cc_pin_ok_v1";
+
+/* =========================
+   PIN (set your PIN)
+   ========================= */
+const ACCESS_PIN = "1234"; // TODO: change
+
+/* =========================
+   Taxonomy (3-level)
+   Values match your cartTypeSelect values
+   ========================= */
+const CART_TAXONOMY = {
+  ADULT_MAIN: {
+    "ER": ["ER Area", "ER Triage", "ER Room 2", "ER Main", "EDX1", "EDX2"],
+    "Imaging": ["X-Ray Dept", "X-Ray", "CT1", "CT2 / MRI", "CT Trailer", "X-Ray Trailer"],
+    "Procedural": ["Cardiology", "Cath Lab"],
+    "Specials": ["Specials Room 5", "Specials Room 6"],
+    "Surgery": ["OR", "Recovery"],
+    "Mother/Baby": ["L/D Triage", "L/D Nurse Station", "Maternity"],
+    "Buildings/Support": ["North Building", "Physical Therapy", "Basement", "GI Lab"],
+    "Central": ["Central Backup Carts"],
+    "Clinic/Other": ["Urology"]
+  },
+
+  ADULT_TOWERS: {
+    "4th Floor Tower": ["4 South", "4 East", "Extra Cart"],
+    "3rd Floor Tower": ["3 South", "3 East", "Extra Cart"],
+    "2nd Floor Tower": ["2 South", "2 East", "Extra Cart"],
+    "2nd Floor North": ["2A", "2B", "2C", "2D", "Extra Cart"],
+    "3rd Floor North": ["3A", "3B", "3C", "3D", "Extra Cart"],
+    "ICU Pavilion (1st Floor)": ["Pav A", "Pav B", "Pav C"]
+  },
+
+  NEONATAL: {
+    "Labor & Delivery": ["OR Hallway", "L/D Hallway"],
+    "Mother/Baby": ["NICU", "Nursery", "Maternity", "Pav C NICU"],
+    "2nd Floor": ["2A Overflow"],
+    "Central": ["Central Backup Carts"]
+  },
+
+  BROSELOW: {
+    "2nd Floor": ["2C"],
+    "ER": ["ER", "EDX1", "EDX2", "ER Main"],
+    "Surgery": ["Recovery"],
+    "North Building": ["Physical Therapy"],
+    "Central": ["Central Backup Carts"]
+  }
 };
 
 /* =========================
-   PIN Gate
+   DOM Helpers
    ========================= */
-const ACCESS_PIN = "2026"; // <= 8 digits
+const $ = (id) => document.getElementById(id);
 
-/* =========================
-   Cart Types -> Areas
-   ========================= */
-const AREAS_BY_CARTTYPE = {
-  ADULT_MAIN: ["ED", "ICU", "OR", "PACU", "Med-Surg", "Telemetry"],
-  BROSELOW: ["ED Peds", "Peds Unit", "PICU"],
-  NEONATAL: ["NICU", "L&D", "Mother/Baby"],
-  ADULT_TOWERS: ["3SOUTH", "3NORTH", "4SOUTH", "4NORTH", "5SOUTH", "5NORTH"]
-};
-
-/* =========================
-   DOM
-   ========================= */
-const el = {
-  pinGate: document.getElementById("pinGate"),
-  pinInput: document.getElementById("pinInput"),
-  pinUnlockBtn: document.getElementById("pinUnlockBtn"),
-  pinError: document.getElementById("pinError"),
-
-  lockBtn: document.getElementById("lockBtn"),
-  subtitle: document.getElementById("subtitle"),
-  syncDot: document.getElementById("syncDot"),
-  syncText: document.getElementById("syncText"),
-
-  toast: document.getElementById("toast"),
-
-  viewEntry: document.getElementById("viewEntry"),
-  viewPreview: document.getElementById("viewPreview"),
-
-  deptBtn: document.getElementById("deptBtn"),
-  deptCard: document.getElementById("deptCard"),
-  cartTypeSelect: document.getElementById("cartTypeSelect"),
-  areaSelect: document.getElementById("areaSelect"),
-  closeDeptCard: document.getElementById("closeDeptCard"),
-  selectedKeyMeta: document.getElementById("selectedKeyMeta"),
-  savedBadge: document.getElementById("savedBadge"),
-
-  supplyFirst: document.getElementById("supplyFirst"),
-  supplyDate: document.getElementById("supplyDate"),
-  supplyDone: document.getElementById("supplyDone"),
-  supplyTech: document.getElementById("supplyTech"),
-
-  drugFirstExp: document.getElementById("drugFirstExp"),
-  drugName: document.getElementById("drugName"),
-  drugLock: document.getElementById("drugLock"),
-  drugDoneOn: document.getElementById("drugDoneOn"),
-  drugInitials: document.getElementById("drugInitials"),
-
-  headerCheck: document.getElementById("headerCheck"),
-
-  saveBtn: document.getElementById("saveBtn"),
-  clearBtn: document.getElementById("clearBtn"),
-
-  previewBtn: document.getElementById("previewBtn"),
-  previewCount: document.getElementById("previewCount"),
-  entryBtn: document.getElementById("entryBtn"),
-  previewMeta: document.getElementById("previewMeta"),
-  previewList: document.getElementById("previewList"),
-  submitBtn: document.getElementById("submitBtn"),
-  wipeAllBtn: document.getElementById("wipeAllBtn"),
-
-  footerStatus: document.getElementById("footerStatus")
-};
-
-/* =========================
-   State
-   ========================= */
-const state = {
-  unlocked: false,
-  selection: { cartType: "", area: "" },
-  entries: [],
-  editingIndex: null,
-  authReady: false,
-  user: null,
-  authListenerBound: false,
-  submitInFlight: false
-};
-
-/* =========================
-   Helpers
-   ========================= */
-function toast(msg) {
-  console.log("[toast]", msg);
-  if (!el.toast) return alert(msg);
-  el.toast.hidden = false;
-  el.toast.textContent = msg;
+function toast(msg, ms = 1800) {
+  const el = $("toast");
+  if (!el) return alert(msg);
+  el.textContent = msg;
+  el.hidden = false;
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => (el.toast.hidden = true), 2400);
+  toast._t = setTimeout(() => (el.hidden = true), ms);
 }
 
-function setSync(text, ok = true) {
-  if (!el.syncText || !el.syncDot) return;
-  el.syncText.textContent = text;
-  el.syncDot.style.opacity = "1";
-  el.syncDot.style.filter = ok ? "none" : "grayscale(1)";
+function setSync(statusText, ok = true) {
+  const dot = $("syncDot");
+  const txt = $("syncText");
+  if (txt) txt.textContent = statusText;
+  if (dot) dot.style.opacity = ok ? "1" : "0.6";
 }
 
-/** Single source of truth for the badge */
-function setAuthBadgeFromState() {
-  // If we haven't checked auth yet, avoid scary messaging
-  if (!state.authReady) return setSync("Ready", true);
-
-  // Auth checked: show accurate status
-  if (state.user) return setSync("Auth OK", true);
-
-  // No user (not signed in yet). This is NOT blocked—just idle.
-  return setSync("Ready", true);
-}
-
-function loadLS() {
-  state.unlocked = localStorage.getItem(LS.PIN_UNLOCKED) === "1";
+function loadBatch() {
   try {
-    state.selection = JSON.parse(localStorage.getItem(LS.CURRENT_SEL) || "{}") || { cartType: "", area: "" };
+    return JSON.parse(localStorage.getItem(LOCAL_KEY) || "[]");
   } catch {
-    state.selection = { cartType: "", area: "" };
-  }
-  try {
-    state.entries = JSON.parse(localStorage.getItem(LS.ENTRIES) || "[]");
-  } catch {
-    state.entries = [];
+    return [];
   }
 }
 
-function saveLS() {
-  localStorage.setItem(LS.PIN_UNLOCKED, state.unlocked ? "1" : "0");
-  localStorage.setItem(LS.CURRENT_SEL, JSON.stringify(state.selection));
-  localStorage.setItem(LS.ENTRIES, JSON.stringify(state.entries));
+function saveBatch(entries) {
+  localStorage.setItem(LOCAL_KEY, JSON.stringify(entries));
+}
+
+function normalizeCartNumber(raw) {
+  const v = String(raw || "").trim().replace(/^#/, "");
+  if (!v) return "";
+  if (!/^\d+$/.test(v)) return "";
+  return `#${Number(v)}`;
 }
 
 /* =========================
-   PIN Gate
+   Views
    ========================= */
-function showGate() {
-  state.unlocked = false;
-  saveLS();
-  el.pinGate.hidden = false;
-  el.pinInput.value = "";
-  el.pinError.textContent = "";
-  toast("Locked.");
+function showEntryView() {
+  $("viewEntry").hidden = false;
+  $("viewPreview").hidden = true;
+  $("btnBack").hidden = true;
 }
 
-function hideGate() {
-  el.pinGate.hidden = true;
+function showPreviewView() {
+  $("viewEntry").hidden = true;
+  $("viewPreview").hidden = false;
+  $("btnBack").hidden = false;
+}
+
+/* =========================
+   Lock / PIN gate
+   ========================= */
+let isUnlocked = false;
+
+function applyLockState() {
+  // Lock affects sticker inputs + selection UI
+  const locked = !isUnlocked;
+
+  // Sticker inputs
+  const stickerInputs = [
+    "supplyFirst","supplyDate","supplyDone","supplyTech",
+    "drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"
+  ];
+  stickerInputs.forEach(id => {
+    const el = $(id);
+    if (el) el.disabled = locked;
+  });
+
+  // Dept dropdown card controls
+  ["deptBtn","cartTypeSelect","sectionSelect","locationSelect","cartNumberInput","closeDeptCard"].forEach(id => {
+    const el = $(id);
+    if (el) el.disabled = locked;
+  });
+
+  // Actions
+  if ($("saveBtn")) $("saveBtn").disabled = locked;
+  if ($("clearBtn")) $("clearBtn").disabled = locked;
+
+  // Preview allowed even if locked (view-only), but submit should require unlock
+  if ($("submitBtn")) $("submitBtn").disabled = locked;
+
+  // Lock button label
+  const lockBtn = $("lockBtn");
+  if (lockBtn) lockBtn.textContent = locked ? "🔒 Lock" : "🔓 Unlock";
+
+  // PIN gate overlay
+  $("pinGate").style.display = locked ? "flex" : "none";
+
+  updateCompleteIndicator();
 }
 
 function unlockWithPin() {
-  const pin = (el.pinInput.value || "").trim();
-  if (!pin) return (el.pinError.textContent = "Enter PIN.");
-  if (pin !== ACCESS_PIN) return (el.pinError.textContent = "Wrong PIN.");
-  state.unlocked = true;
-  saveLS();
-  hideGate();
-  toast("Unlocked ✅");
-}
-
-/* =========================
-   Department UI
-   ========================= */
-function openDeptCard() { el.deptCard.hidden = false; }
-function closeDeptCard() { el.deptCard.hidden = true; }
-
-function populateAreasForCartType(cartType) {
-  const areas = AREAS_BY_CARTTYPE[cartType] || [];
-  el.areaSelect.innerHTML = `<option value="" selected disabled>Select area…</option>`;
-  areas.forEach((a) => {
-    const opt = document.createElement("option");
-    opt.value = a;
-    opt.textContent = a;
-    el.areaSelect.appendChild(opt);
-  });
-  el.areaSelect.disabled = areas.length === 0;
-}
-
-function setDeptBtnLabel(labelText) {
-  const textNode = Array.from(el.deptBtn.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
-  if (textNode) textNode.textContent = `${labelText} `;
-  else el.deptBtn.insertBefore(document.createTextNode(`${labelText} `), el.deptBtn.firstChild);
-}
-
-function updateSelectionMeta() {
-  const ct = state.selection.cartType || "—";
-  const ar = state.selection.area || "—";
-  el.selectedKeyMeta.textContent = `Selected: ${ct} → ${ar}`;
-  setDeptBtnLabel(state.selection.area ? `${state.selection.area} ▾` : "DEPARTMENT ▾");
-}
-
-function selectionKey() {
-  const { cartType, area } = state.selection;
-  if (!cartType || !area) return "";
-  return `${cartType}__${area}`;
-}
-
-/* =========================
-   Form
-   ========================= */
-function readForm() {
-  return {
-    supplyFirst: el.supplyFirst.value.trim(),
-    supplyDate: el.supplyDate.value.trim(),
-    supplyDone: el.supplyDone.value.trim(),
-    supplyTech: el.supplyTech.value.trim(),
-    drugFirstExp: el.drugFirstExp.value.trim(),
-    drugName: el.drugName.value.trim(),
-    drugLock: el.drugLock.value.trim(),
-    drugDoneOn: el.drugDoneOn.value.trim(),
-    drugInitials: el.drugInitials.value.trim()
-  };
-}
-
-function writeForm(d = {}) {
-  el.supplyFirst.value = d.supplyFirst || "";
-  el.supplyDate.value = d.supplyDate || "";
-  el.supplyDone.value = d.supplyDone || "";
-  el.supplyTech.value = d.supplyTech || "";
-  el.drugFirstExp.value = d.drugFirstExp || "";
-  el.drugName.value = d.drugName || "";
-  el.drugLock.value = d.drugLock || "";
-  el.drugDoneOn.value = d.drugDoneOn || "";
-  el.drugInitials.value = d.drugInitials || "";
-}
-
-function clearForm() {
-  writeForm({});
-  el.headerCheck.hidden = true;
-  el.savedBadge.hidden = true;
-  state.editingIndex = null;
-  saveLS();
-}
-
-function markSavedUI() {
-  el.savedBadge.hidden = false;
-  el.headerCheck.hidden = false;
-  clearTimeout(markSavedUI._t);
-  markSavedUI._t = setTimeout(() => (el.savedBadge.hidden = true), 1600);
-}
-
-/* =========================
-   Entries (local)
-   ========================= */
-function upsertEntry() {
-  const key = selectionKey();
-  if (!key) return toast("Select Cart Type + Area first.");
-
-  const entry = {
-    key,
-    cartType: state.selection.cartType,
-    area: state.selection.area,
-    lastUpdated: new Date().toLocaleString(),
-    form: readForm()
-  };
-
-  if (state.editingIndex !== null) {
-    state.entries[state.editingIndex] = entry;
-    state.editingIndex = null;
-  } else {
-    const existingIdx = state.entries.findIndex((e) => e.key === key);
-    if (existingIdx >= 0) state.entries[existingIdx] = entry;
-    else state.entries.push(entry);
+  const pin = String($("pinInput")?.value || "").trim();
+  if (pin !== ACCESS_PIN) {
+    const err = $("pinError");
+    if (err) err.textContent = "Incorrect PIN.";
+    return;
   }
-
-  saveLS();
-  updatePreviewCount();
-  markSavedUI();
-  toast("Saved ✅");
+  localStorage.setItem(LOCAL_PIN_OK, "1");
+  isUnlocked = true;
+  const err = $("pinError");
+  if (err) err.textContent = "";
+  $("pinInput").value = "";
+  setSync("Unlocked", true);
+  applyLockState();
+  toast("Unlocked.");
 }
+
+function lockNow() {
+  localStorage.removeItem(LOCAL_PIN_OK);
+  isUnlocked = false;
+  setSync("Locked", false);
+  applyLockState();
+}
+
+/* =========================
+   Dept Card Toggle
+   ========================= */
+function openDeptCard() {
+  $("deptCard").hidden = false;
+}
+function closeDeptCard() {
+  $("deptCard").hidden = true;
+}
+
+/* =========================
+   Dropdown population (3-level)
+   ========================= */
+function resetSelect(selectEl, placeholder) {
+  selectEl.innerHTML = "";
+  const opt = document.createElement("option");
+  opt.value = "";
+  opt.disabled = true;
+  opt.selected = true;
+  opt.textContent = placeholder;
+  selectEl.appendChild(opt);
+}
+
+function fillSelect(selectEl, items) {
+  items.forEach(v => {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    selectEl.appendChild(opt);
+  });
+}
+
+function onCartTypeChange() {
+  const cartType = $("cartTypeSelect").value;
+  const sections = Object.keys(CART_TAXONOMY[cartType] || {});
+
+  const sectionSelect = $("sectionSelect");
+  const locationSelect = $("locationSelect");
+
+  resetSelect(sectionSelect, "Select section…");
+  resetSelect(locationSelect, "Select location…");
+
+  sectionSelect.disabled = sections.length === 0;
+  locationSelect.disabled = true;
+
+  fillSelect(sectionSelect, sections);
+
+  // Clear meta + department display
+  updateSelectedMeta();
+  updateCompleteIndicator();
+}
+
+function onSectionChange() {
+  const cartType = $("cartTypeSelect").value;
+  const section = $("sectionSelect").value;
+  const locations = (CART_TAXONOMY[cartType]?.[section]) || [];
+
+  const locationSelect = $("locationSelect");
+  resetSelect(locationSelect, "Select location…");
+  fillSelect(locationSelect, locations);
+  locationSelect.disabled = locations.length === 0;
+
+  updateSelectedMeta();
+  updateCompleteIndicator();
+}
+
+function onLocationChange() {
+  updateSelectedMeta();
+  updateCompleteIndicator();
+}
+
+function updateSelectedMeta() {
+  const cartType = $("cartTypeSelect")?.value || "";
+  const section = $("sectionSelect")?.value || "";
+  const location = $("locationSelect")?.value || "";
+  const cartNum = normalizeCartNumber($("cartNumberInput")?.value || "");
+
+  const display = section && location ? `${section} — ${location}` : "—";
+  const meta = $("selectedKeyMeta");
+  if (meta) meta.textContent = `Selected: ${display}${cartNum ? ` | Cart ${cartNum}` : ""}`;
+
+  // If you later add a printed “Department” field on the sticker,
+  // this is where we’d set it live.
+}
+
+/* =========================
+   Entry completeness ✅ (informational)
+   "All fields are entered" = all sticker inputs + selection + cart#
+   ========================= */
+function getEntryDraft() {
+  const cartType = $("cartTypeSelect")?.value || "";
+  const section = $("sectionSelect")?.value || "";
+  const location = $("locationSelect")?.value || "";
+  const cartNumber = normalizeCartNumber($("cartNumberInput")?.value || "");
+
+  const departmentDisplay = (section && location) ? `${section} — ${location}` : "";
+
+  const fields = {
+    supplyFirst: $("supplyFirst")?.value || "",
+    supplyDate: $("supplyDate")?.value || "",
+    supplyDone: $("supplyDone")?.value || "",
+    supplyTech: $("supplyTech")?.value || "",
+    drugFirstExp: $("drugFirstExp")?.value || "",
+    drugName: $("drugName")?.value || "",
+    drugLock: $("drugLock")?.value || "",
+    drugDoneOn: $("drugDoneOn")?.value || "",
+    drugInitials: $("drugInitials")?.value || "",
+  };
+
+  return {
+    cartType,
+    section,
+    location,
+    departmentDisplay,
+    cartNumber,
+    ...fields
+  };
+}
+
+function isComplete(entry) {
+  // completeness = everything filled + valid cart#
+  if (!entry.cartType || !entry.section || !entry.location) return false;
+  if (!entry.cartNumber) return false;
+
+  // all sticker inputs must be non-empty (per your request)
+  const requiredInputs = [
+    "supplyFirst","supplyDate","supplyDone","supplyTech",
+    "drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"
+  ];
+  return requiredInputs.every(k => String(entry[k] || "").trim().length > 0);
+}
+
+function updateCompleteIndicator() {
+  const check = $("headerCheck");
+  const hint = $("completeHint");
+  if (!check || !hint) return;
+
+  const entry = getEntryDraft();
+  const complete = isComplete(entry);
+
+  check.hidden = !complete;
+  // purely informational
+  hint.style.opacity = complete ? "0.55" : "1";
+}
+
+/* =========================
+   Save (local batch)
+   ========================= */
+let batch = loadBatch();
+let editingIndex = null;
 
 function updatePreviewCount() {
-  el.previewCount.textContent = String(state.entries.length);
-  el.previewMeta.textContent = `${state.entries.length} saved.`;
-  el.footerStatus.textContent = `Local: ${state.entries.length} saved`;
+  const pill = $("previewCount");
+  if (pill) pill.textContent = String(batch.length);
+  const meta = $("previewMeta");
+  if (meta) meta.textContent = `${batch.length} saved.`;
 }
 
-function deleteEntry(idx) {
-  if (!confirm("Delete this saved entry?")) return;
-  state.entries.splice(idx, 1);
-  saveLS();
+function validateBeforeSave(entry) {
+  if (!entry.cartType) return "Select Cart Type.";
+  if (!entry.section) return "Select Section.";
+  if (!entry.location) return "Select Location.";
+  if (!entry.cartNumber) return "Enter a valid Cart # (numbers only).";
+
+  // all sticker inputs required (per your request)
+  if (!isComplete(entry)) return "Complete entry to continue.";
+  return "";
+}
+
+function clearFields(keepDept = true) {
+  // sticker fields
+  ["supplyFirst","supplyDate","supplyDone","supplyTech","drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"].forEach(id => {
+    if ($(id)) $(id).value = "";
+  });
+
+  // cart number cleared (usually)
+  if ($("cartNumberInput")) $("cartNumberInput").value = "";
+
+  // keep selection or not
+  if (!keepDept) {
+    $("cartTypeSelect").value = "";
+    resetSelect($("sectionSelect"), "Select section…");
+    resetSelect($("locationSelect"), "Select location…");
+    $("sectionSelect").disabled = true;
+    $("locationSelect").disabled = true;
+  }
+
+  editingIndex = null;
+  $("savedBadge").hidden = true;
+  updateSelectedMeta();
+  updateCompleteIndicator();
+}
+
+function saveEntry() {
+  const entry = getEntryDraft();
+  const err = validateBeforeSave(entry);
+  if (err) return toast(err);
+
+  const record = {
+    ...entry,
+    createdAtLocal: new Date().toISOString()
+  };
+
+  if (editingIndex !== null) {
+    batch[editingIndex] = record;
+    editingIndex = null;
+    toast("Updated saved item.");
+  } else {
+    batch.push(record);
+    toast("Saved to batch.");
+  }
+
+  saveBatch(batch);
+  $("savedBadge").hidden = false;
   updatePreviewCount();
   renderPreviewList();
-  toast("Deleted.");
-}
-
-function editEntry(idx) {
-  const entry = state.entries[idx];
-  if (!entry) return;
-
-  state.selection.cartType = entry.cartType;
-  state.selection.area = entry.area;
-  saveLS();
-
-  el.cartTypeSelect.value = entry.cartType;
-  populateAreasForCartType(entry.cartType);
-  el.areaSelect.disabled = false;
-  el.areaSelect.value = entry.area;
-
-  updateSelectionMeta();
-  writeForm(entry.form);
-
-  state.editingIndex = idx;
-  goEntry();
-  toast("Editing entry…");
 }
 
 /* =========================
-   Preview
+   Preview: render/edit/delete
    ========================= */
+function renderPreviewList() {
+  const list = $("previewList");
+  if (!list) return;
+
+  if (batch.length === 0) {
+    list.innerHTML = `<div class="meta">No saved entries yet.</div>`;
+    return;
+  }
+
+  list.innerHTML = batch.map((e, idx) => {
+    const head = `${e.departmentDisplay}  |  Cart ${e.cartNumber}`;
+    const supply = `Supply: ${e.supplyFirst}  •  Date: ${e.supplyDate}  •  Done: ${e.supplyDone}  •  CS: ${e.supplyTech}`;
+    const drug = `Drug: ${e.drugFirstExp} (${e.drugName})  •  Lock: ${e.drugLock}  •  Done: ${e.drugDoneOn}  •  Init: ${e.drugInitials}`;
+
+    return `
+      <div class="card" style="margin-top:12px;">
+        <div class="meta" style="font-weight:700;">${escapeHtml(head)}</div>
+        <div class="meta">${escapeHtml(supply)}</div>
+        <div class="meta">${escapeHtml(drug)}</div>
+
+        <div class="actions" style="margin-top:10px;">
+          <button class="btn btn--ghost" type="button" data-edit="${idx}">Edit</button>
+          <button class="btn btn--ghost" type="button" data-del="${idx}">Delete</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  list.querySelectorAll("[data-edit]").forEach(btn => {
+    btn.addEventListener("click", () => editFromPreview(Number(btn.dataset.edit)));
+  });
+  list.querySelectorAll("[data-del]").forEach(btn => {
+    btn.addEventListener("click", () => deleteFromPreview(Number(btn.dataset.del)));
+  });
+}
+
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -367,302 +476,203 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-function renderPreviewList() {
-  el.previewList.innerHTML = "";
-  if (!state.entries.length) {
-    el.previewList.innerHTML = `<div class="meta">No saved entries yet.</div>`;
-    return;
-  }
+function editFromPreview(idx) {
+  const e = batch[idx];
+  if (!e) return;
 
-  state.entries.forEach((e, idx) => {
-    const card = document.createElement("div");
-    card.className = "previewCard";
-    card.style.border = "1px solid rgba(255,255,255,0.08)";
-    card.style.borderRadius = "14px";
-    card.style.padding = "14px";
-    card.style.marginBottom = "12px";
+  // Fill selection
+  $("cartTypeSelect").value = e.cartType;
+  onCartTypeChange();
 
-    card.innerHTML = `
-      <div style="font-weight:700; font-size:16px; margin-bottom:6px;">
-        ${escapeHtml(e.cartType)} → ${escapeHtml(e.area)}
-      </div>
-      <div style="opacity:0.8; font-size:13px; margin-bottom:10px;">
-        Last updated: ${escapeHtml(e.lastUpdated)}
-      </div>
-      <div style="display:flex; gap:10px;">
-        <button class="btn btn--ghost" data-action="edit" data-idx="${idx}">Edit</button>
-        <button class="btn btn--ghost" data-action="delete" data-idx="${idx}">Delete</button>
-      </div>
-    `;
-    el.previewList.appendChild(card);
-  });
+  $("sectionSelect").value = e.section;
+  onSectionChange();
+
+  $("locationSelect").value = e.location;
+  onLocationChange();
+
+  $("cartNumberInput").value = (e.cartNumber || "").replace(/^#/, "");
+
+  // Fill sticker fields
+  $("supplyFirst").value = e.supplyFirst || "";
+  $("supplyDate").value = e.supplyDate || "";
+  $("supplyDone").value = e.supplyDone || "";
+  $("supplyTech").value = e.supplyTech || "";
+
+  $("drugFirstExp").value = e.drugFirstExp || "";
+  $("drugName").value = e.drugName || "";
+  $("drugLock").value = e.drugLock || "";
+  $("drugDoneOn").value = e.drugDoneOn || "";
+  $("drugInitials").value = e.drugInitials || "";
+
+  editingIndex = idx;
+  $("savedBadge").hidden = true;
+  updateSelectedMeta();
+  updateCompleteIndicator();
+
+  showEntryView();
+  toast("Editing saved item. Press SAVE to update.");
 }
 
-/* =========================
-   Views
-   ========================= */
-function goEntry() {
-  el.viewEntry.hidden = false;
-  el.viewPreview.hidden = true;
-  el.subtitle.textContent = "Sticker entry → Preview → Submit";
-}
-function goPreview() {
-  el.viewEntry.hidden = true;
-  el.viewPreview.hidden = false;
-  el.subtitle.textContent = "Review everything before submitting";
-  renderPreviewList();
+function deleteFromPreview(idx) {
+  batch.splice(idx, 1);
+  saveBatch(batch);
   updatePreviewCount();
+  renderPreviewList();
+  toast("Deleted.");
 }
 
 /* =========================
-   Firebase
+   Submit to Firestore
+   - one Submission doc containing entries array
    ========================= */
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
-
-enableIndexedDbPersistence(db).catch(() => {});
-
-/** Bind ONE auth listener so the badge always tells the truth */
-function bindAuthStatusListenerOnce() {
-  if (state.authListenerBound) return;
-  state.authListenerBound = true;
-
-  onAuthStateChanged(auth, (user) => {
-    state.user = user || null;
-    state.authReady = true;
-    setAuthBadgeFromState();
-  });
-}
-
-function normalizeAuthError(e) {
-  const code = e?.code || "";
-  const msg = e?.message || "";
-
-  // Common "signups blocked / provider disabled" codes you may see:
-  // auth/operation-not-allowed
-  // auth/admin-restricted-operation
-  // auth/unauthorized-domain
-  // auth/internal-error
-  const blocked =
-    code.includes("signup") ||
-    code.includes("operation-not-allowed") ||
-    code.includes("admin-restricted-operation");
-
-  return { code, msg, blocked };
-}
-
-async function ensureAnonAuthOnce() {
-  // If already signed in, done.
-  if (auth.currentUser) {
-    state.user = auth.currentUser;
-    state.authReady = true;
-    setAuthBadgeFromState();
-    return { ok: true };
+function deviceId() {
+  let id = localStorage.getItem("cc_device_id_v1");
+  if (!id) {
+    id = (crypto?.randomUUID?.() || `dev_${Date.now()}_${Math.random()}`).toString();
+    localStorage.setItem("cc_device_id_v1", id);
   }
-
-  // Try signing in once, then wait for auth state to reflect it.
-  try {
-    await signInAnonymously(auth);
-
-    // Wait for auth state to become available (max 5s)
-    const ok = await new Promise((resolve) => {
-      const t = setTimeout(() => resolve(false), 5000);
-      const unsub = onAuthStateChanged(auth, (user) => {
-        if (user) {
-          clearTimeout(t);
-          unsub?.();
-          resolve(true);
-        }
-      });
-    });
-
-    state.user = auth.currentUser || null;
-    state.authReady = true;
-    setAuthBadgeFromState();
-
-    return { ok };
-  } catch (e) {
-    const { code, blocked } = normalizeAuthError(e);
-    console.error("Anon auth failed:", e);
-
-    state.user = null;
-    state.authReady = true;
-
-    // Only show "Auth blocked" when it's truly blocked.
-    setSync("Auth blocked", false);
-
-    return { ok: false, err: e, code, blocked };
-  }
+  return id;
 }
 
 async function submitToFirebase() {
-  if (!state.unlocked) return toast("Locked. Enter PIN first.");
-  if (!state.entries.length) return toast("Nothing to submit.");
-  if (state.submitInFlight) return;
+  if (!isUnlocked) return toast("Unlock to submit.");
+  if (batch.length === 0) return toast("Nothing to submit.");
 
-  state.submitInFlight = true;
-
-  // During submit, we show progress states explicitly.
-  setSync("Signing in…", true);
-
-  const res = await ensureAnonAuthOnce();
-  if (!res.ok) {
-    const code = res.code || res.err?.code || "";
-    toast(`Auth blocked: ${code}`.trim());
-
-    if (res.blocked) {
-      toast("Fix: Enable Anonymous provider in Firebase Auth (Sign-in method). If using Identity Platform signup blocking, allow new users.");
-    } else if (code.includes("unauthorized-domain")) {
-      toast("Fix: Add your domain in Firebase Auth → Settings → Authorized domains.");
-    }
-
-    state.submitInFlight = false;
-    return;
+  // Validate everything again
+  for (const e of batch) {
+    if (!isComplete(e)) return toast("One or more saved entries is incomplete.");
+    if (!e.cartNumber) return toast("One or more entries is missing Cart #.");
   }
-
-  setSync("Submitting…", true);
-
-  const submissionId = `sub_${Date.now()}`;
-  const payload = {
-    createdAt: serverTimestamp(),
-    createdByUid: auth.currentUser?.uid || null,
-    entries: state.entries
-  };
 
   try {
-    await setDoc(doc(db, SUBMISSIONS_COLLECTION, submissionId), payload);
+    setSync("Signing in…", true);
+    await signInAnonymously(auth);
 
-    // After a real successful write, show success AND the auth listener will keep it accurate later.
+    setSync("Uploading…", true);
+
+    const submissionsCol = collection(db, "crash_cart_submissions");
+    const submissionId = `sub_${new Date().toISOString().replaceAll(":", "-")}_${deviceId()}`;
+    const ref = doc(submissionsCol, submissionId);
+
+    await setDoc(ref, {
+      deviceId: deviceId(),
+      entryCount: batch.length,
+      entries: batch,
+      createdAt: serverTimestamp()
+    });
+
+    // Clear local batch on success
+    batch = [];
+    saveBatch(batch);
+    updatePreviewCount();
+    renderPreviewList();
     setSync("Submitted ✅", true);
     toast("Submitted to Firebase ✅");
-  } catch (e) {
-    console.error("Firestore submit error:", e);
+
+  } catch (err) {
+    console.error(err);
     setSync("Submit failed", false);
-    toast(`Submit failed: ${e.code || ""}`.trim());
-  } finally {
-    state.submitInFlight = false;
-    // After a moment, return badge to truth-driven state (Auth OK / Ready)
-    setTimeout(() => setAuthBadgeFromState(), 1200);
+    toast("Submit failed. Check console.");
   }
 }
 
 /* =========================
-   Wipe local
+   Wire up events
    ========================= */
-function wipeAllLocal() {
-  if (!confirm("Wipe ALL saved (local) entries?")) return;
-  state.entries = [];
-  state.editingIndex = null;
-  saveLS();
-  updatePreviewCount();
-  renderPreviewList();
-  toast("Wiped local saved entries.");
-}
-
-/* =========================
-   Events
-   ========================= */
-function bind() {
-  el.pinUnlockBtn.addEventListener("click", unlockWithPin);
-  el.pinInput.addEventListener("keydown", (e) => {
+function wireEvents() {
+  // PIN
+  $("pinUnlockBtn")?.addEventListener("click", unlockWithPin);
+  $("pinInput")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") unlockWithPin();
   });
 
-  el.lockBtn.addEventListener("click", showGate);
+  // Lock button
+  $("lockBtn")?.addEventListener("click", () => {
+    if (isUnlocked) lockNow();
+    else $("pinGate").style.display = "flex";
+  });
 
-  el.deptBtn.addEventListener("click", () => {
-    if (!state.unlocked) return toast("Enter PIN first.");
+  // Dept card open/close
+  $("deptBtn")?.addEventListener("click", () => {
+    if (!isUnlocked) return toast("Unlock to continue.");
     openDeptCard();
   });
+  $("closeDeptCard")?.addEventListener("click", closeDeptCard);
 
-  el.closeDeptCard.addEventListener("click", closeDeptCard);
-
-  el.cartTypeSelect.addEventListener("change", () => {
-    state.selection.cartType = el.cartTypeSelect.value;
-    state.selection.area = "";
-    saveLS();
-
-    populateAreasForCartType(state.selection.cartType);
-    el.areaSelect.disabled = false;
-    el.areaSelect.value = "";
-    updateSelectionMeta();
+  // Dropdown changes
+  $("cartTypeSelect")?.addEventListener("change", onCartTypeChange);
+  $("sectionSelect")?.addEventListener("change", onSectionChange);
+  $("locationSelect")?.addEventListener("change", onLocationChange);
+  $("cartNumberInput")?.addEventListener("input", () => {
+    updateSelectedMeta();
+    updateCompleteIndicator();
   });
 
-  el.areaSelect.addEventListener("change", () => {
-    state.selection.area = el.areaSelect.value;
-    saveLS();
-    updateSelectionMeta();
-    closeDeptCard();
-    toast(`Selected: ${state.selection.area}`);
+  // Sticker inputs completeness watch
+  ["supplyFirst","supplyDate","supplyDone","supplyTech","drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"].forEach(id => {
+    $(id)?.addEventListener("input", updateCompleteIndicator);
+    $(id)?.addEventListener("change", updateCompleteIndicator);
   });
 
-  el.saveBtn.addEventListener("click", () => {
-    if (!state.unlocked) return toast("Enter PIN first.");
-    upsertEntry();
+  // Save / clear
+  $("saveBtn")?.addEventListener("click", saveEntry);
+  $("clearBtn")?.addEventListener("click", () => clearFields(true));
+
+  // Preview / Entry navigation
+  $("previewBtn")?.addEventListener("click", () => {
+    showPreviewView();
+    renderPreviewList();
   });
 
-  el.clearBtn.addEventListener("click", () => {
-    clearForm();
-    toast("Cleared.");
-  });
+  $("entryBtn")?.addEventListener("click", () => showEntryView());
 
-  el.previewBtn.addEventListener("click", () => {
-    if (!state.unlocked) return toast("Enter PIN first.");
-    goPreview();
-  });
+  $("btnBack")?.addEventListener("click", () => showEntryView());
 
-  el.entryBtn.addEventListener("click", goEntry);
+  // Submit / wipe
+  $("submitBtn")?.addEventListener("click", submitToFirebase);
 
-  el.submitBtn.addEventListener("click", submitToFirebase);
-  el.wipeAllBtn.addEventListener("click", wipeAllLocal);
-
-  el.previewList.addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-action]");
-    if (!btn) return;
-    const idx = Number(btn.dataset.idx);
-    if (!Number.isFinite(idx)) return;
-    if (btn.dataset.action === "delete") deleteEntry(idx);
-    if (btn.dataset.action === "edit") editEntry(idx);
+  $("wipeAllBtn")?.addEventListener("click", () => {
+    batch = [];
+    saveBatch(batch);
+    updatePreviewCount();
+    renderPreviewList();
+    toast("Local batch wiped.");
   });
 }
 
 /* =========================
-   Boot
+   Init
    ========================= */
 function init() {
-  console.log("APP_VERSION:", APP_VERSION);
+  // restore unlock state
+  isUnlocked = localStorage.getItem(LOCAL_PIN_OK) === "1";
 
-  loadLS();
-
-  if (state.unlocked) {
-    hideGate();
-  } else {
-    el.pinGate.hidden = false;
+  // ensure selects exist (you added these in HTML edits)
+  if (!$("sectionSelect") || !$("locationSelect") || !$("cartNumberInput")) {
+    console.warn("Missing section/location/cartNumber inputs. Apply the HTML edits.");
   }
 
-  if (state.selection.cartType) {
-    el.cartTypeSelect.value = state.selection.cartType;
-    populateAreasForCartType(state.selection.cartType);
-    el.areaSelect.disabled = false;
-    if (state.selection.area) el.areaSelect.value = state.selection.area;
-  } else {
-    populateAreasForCartType("");
-    el.areaSelect.disabled = true;
+  // initial dropdown reset
+  if ($("sectionSelect")) {
+    resetSelect($("sectionSelect"), "Select section…");
+    $("sectionSelect").disabled = true;
+  }
+  if ($("locationSelect")) {
+    resetSelect($("locationSelect"), "Select location…");
+    $("locationSelect").disabled = true;
   }
 
-  updateSelectionMeta();
+  // load batch and update UI
+  batch = loadBatch();
   updatePreviewCount();
 
-  // Start badge in a calm default state.
-  setSync("Ready", true);
+  // start in entry view
+  showEntryView();
+  setSync(isUnlocked ? "Unlocked" : "Locked", isUnlocked);
 
-  // IMPORTANT: bind auth listener so the badge always reflects reality.
-  // (Does NOT sign in at boot—just listens.)
-  bindAuthStatusListenerOnce();
-
-  bind();
-  goEntry();
+  wireEvents();
+  applyLockState();
+  renderPreviewList();
 }
 
 init();
