@@ -28,10 +28,9 @@ import {
    If Firebase isn't configured yet, UI still works; submit will warn.
 */
 const firebaseConfig = {
-  apiKey: "REPLACE_ME",
-  authDomain: "REPLACE_ME",
-  projectId: "REPLACE_ME",
-};
+  apiKey: "AIzaSyB-3bjNKIf-OOcRu3HtxdsjnMugpD1lhQU",
+  authDomain: "phcmc-crash-cart.firebaseapp.com",
+  projectId: "phcmc-crash-cart",
 
 let db = null;
 let auth = null;
