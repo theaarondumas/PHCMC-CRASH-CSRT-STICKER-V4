@@ -11,17 +11,16 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
 
 /* ============================================================
-   app.js — BULLETPROOF UI
-   - Department card always opens (HTML fallback + JS)
+   app.js — BULLETPROOF UI (CLEAN)
+   - Department card always opens
    - 3-level dropdowns + Cart# required
    - ✅ appears when ALL fields complete
    - Save -> local batch
    - Preview -> Edit/Delete
-   - Submit -> Firebase (Firebase loads ONLY when you click submit)
+   - Submit -> Firebase (uses existing db/auth, addDoc)
    ============================================================ */
 
 const $ = (id) => document.getElementById(id);
-
 const LOCAL_KEY = "cc_batch_entries_v3";
 
 /* =========================
@@ -63,7 +62,7 @@ const CART_TAXONOMY = {
 };
 
 /* =========================
-   Firebase Config (PASTE YOUR REAL ONE)
+   Firebase Config (YOUR REAL ONE)
    ========================= */
 const firebaseConfig = {
   apiKey: "AIzaSyB-3bjNKIf-OOcRu3HtxdsjnMugpD1lhQU",
@@ -74,16 +73,17 @@ const firebaseConfig = {
   appId: "1:478233106614:web:441f55c8f401bb335aae17",
   measurementId: "G-SQJ14G87G6"
 };
-// =========================
-// Firebase init (REQUIRED)
-// =========================
+
+/* =========================
+   Firebase init (single init)
+   ========================= */
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-
 const auth = getAuth(app);
+
+// Top-level await is OK because index.html loads app.js as type="module"
 await signInAnonymously(auth);
 
-// Debug (remove later)
 console.log("Firebase initialized:", app?.options?.projectId);
 console.log("Signed in UID:", auth.currentUser?.uid);
 
@@ -114,6 +114,7 @@ function saveBatch(entries) {
 }
 
 function resetSelect(selectEl, placeholder) {
+  if (!selectEl) return;
   selectEl.innerHTML = "";
   const opt = document.createElement("option");
   opt.value = "";
@@ -124,6 +125,7 @@ function resetSelect(selectEl, placeholder) {
 }
 
 function fillSelect(selectEl, items) {
+  if (!selectEl) return;
   items.forEach(v => {
     const opt = document.createElement("option");
     opt.value = v;
@@ -167,26 +169,27 @@ function showPreviewView() {
    Dropdown logic
    ========================= */
 function onCartTypeChange() {
-  const cartType = $("cartTypeSelect").value;
+  const cartType = $("cartTypeSelect")?.value || "";
   const sections = Object.keys(CART_TAXONOMY[cartType] || {});
   resetSelect($("sectionSelect"), "Select section…");
   resetSelect($("locationSelect"), "Select location…");
   fillSelect($("sectionSelect"), sections);
 
-  $("sectionSelect").disabled = sections.length === 0;
-  $("locationSelect").disabled = true;
+  if ($("sectionSelect")) $("sectionSelect").disabled = sections.length === 0;
+  if ($("locationSelect")) $("locationSelect").disabled = true;
 
   updateSelectedMeta();
   updateCompleteIndicator();
 }
 
 function onSectionChange() {
-  const cartType = $("cartTypeSelect").value;
-  const section = $("sectionSelect").value;
+  const cartType = $("cartTypeSelect")?.value || "";
+  const section = $("sectionSelect")?.value || "";
   const locations = CART_TAXONOMY[cartType]?.[section] || [];
+
   resetSelect($("locationSelect"), "Select location…");
   fillSelect($("locationSelect"), locations);
-  $("locationSelect").disabled = locations.length === 0;
+  if ($("locationSelect")) $("locationSelect").disabled = locations.length === 0;
 
   updateSelectedMeta();
   updateCompleteIndicator();
@@ -197,7 +200,9 @@ function updateSelectedMeta() {
   const location = $("locationSelect")?.value || "";
   const cartNum = normalizeCartNumber($("cartNumberInput")?.value || "");
   const display = section && location ? `${section} — ${location}` : "—";
-  $("selectedKeyMeta").textContent = `Selected: ${display}${cartNum ? ` | Cart ${cartNum}` : ""}`;
+  if ($("selectedKeyMeta")) {
+    $("selectedKeyMeta").textContent = `Selected: ${display}${cartNum ? ` | Cart ${cartNum}` : ""}`;
+  }
 }
 
 /* =========================
@@ -236,13 +241,14 @@ function isComplete(e) {
 }
 
 function updateCompleteIndicator() {
-  const check = $("headerCheck");
-  const hint = $("completeHint");
-  if (!check || !hint) return;
+  const check = $("headerCheck");     // ✅ icon on sticker header
+  const hint  = $("completeHint");    // "Complete entry to continue"
+  if (!check) return;
 
   const complete = isComplete(getDraft());
   check.hidden = !complete;
-  hint.style.opacity = complete ? "0.55" : "1";
+
+  if (hint) hint.style.opacity = complete ? "0.55" : "1";
 }
 
 /* =========================
@@ -252,8 +258,8 @@ let batch = loadBatch();
 let editingIndex = null;
 
 function updateCounts() {
-  $("previewCount").textContent = String(batch.length);
-  $("previewMeta").textContent = `${batch.length} saved.`;
+  if ($("previewCount")) $("previewCount").textContent = String(batch.length);
+  if ($("previewMeta")) $("previewMeta").textContent = `${batch.length} saved.`;
 }
 
 function validateForSave(e) {
@@ -266,19 +272,24 @@ function validateForSave(e) {
 }
 
 function clearFields(keepDept = true) {
-  ["supplyFirst","supplyDate","supplyDone","supplyTech","drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"]
-    .forEach(id => { if ($(id)) $(id).value = ""; });
+  [
+    "supplyFirst","supplyDate","supplyDone","supplyTech",
+    "drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"
+  ].forEach(id => { if ($(id)) $(id).value = ""; });
 
   if ($("cartNumberInput")) $("cartNumberInput").value = "";
+
   if (!keepDept) {
-    $("cartTypeSelect").value = "";
+    if ($("cartTypeSelect")) $("cartTypeSelect").value = "";
     resetSelect($("sectionSelect"), "Select section…");
     resetSelect($("locationSelect"), "Select location…");
-    $("sectionSelect").disabled = true;
-    $("locationSelect").disabled = true;
+    if ($("sectionSelect")) $("sectionSelect").disabled = true;
+    if ($("locationSelect")) $("locationSelect").disabled = true;
   }
+
   editingIndex = null;
   if ($("savedBadge")) $("savedBadge").hidden = true;
+
   updateSelectedMeta();
   updateCompleteIndicator();
 }
@@ -301,6 +312,7 @@ function saveEntry() {
 
   saveBatch(batch);
   if ($("savedBadge")) $("savedBadge").hidden = false;
+
   updateCounts();
   renderPreview();
 }
@@ -335,6 +347,7 @@ function renderPreview() {
   list.querySelectorAll("[data-edit]").forEach(btn => {
     btn.addEventListener("click", () => editEntry(Number(btn.dataset.edit)));
   });
+
   list.querySelectorAll("[data-del]").forEach(btn => {
     btn.addEventListener("click", () => deleteEntry(Number(btn.dataset.del)));
   });
@@ -344,34 +357,34 @@ function editEntry(idx) {
   const e = batch[idx];
   if (!e) return;
 
-  $("cartTypeSelect").value = e.cartType;
+  if ($("cartTypeSelect")) $("cartTypeSelect").value = e.cartType;
   onCartTypeChange();
 
-  $("sectionSelect").value = e.section;
+  if ($("sectionSelect")) $("sectionSelect").value = e.section;
   onSectionChange();
 
-  $("locationSelect").value = e.location;
-  updateSelectedMeta();
+  if ($("locationSelect")) $("locationSelect").value = e.location;
 
-  $("cartNumberInput").value = (e.cartNumber || "").replace(/^#/, "");
+  if ($("cartNumberInput")) $("cartNumberInput").value = (e.cartNumber || "").replace(/^#/, "");
 
-  $("supplyFirst").value = e.supplyFirst || "";
-  $("supplyDate").value = e.supplyDate || "";
-  $("supplyDone").value = e.supplyDone || "";
-  $("supplyTech").value = e.supplyTech || "";
+  if ($("supplyFirst")) $("supplyFirst").value = e.supplyFirst || "";
+  if ($("supplyDate")) $("supplyDate").value = e.supplyDate || "";
+  if ($("supplyDone")) $("supplyDone").value = e.supplyDone || "";
+  if ($("supplyTech")) $("supplyTech").value = e.supplyTech || "";
 
-  $("drugFirstExp").value = e.drugFirstExp || "";
-  $("drugName").value = e.drugName || "";
-  $("drugLock").value = e.drugLock || "";
-  $("drugDoneOn").value = e.drugDoneOn || "";
-  $("drugInitials").value = e.drugInitials || "";
+  if ($("drugFirstExp")) $("drugFirstExp").value = e.drugFirstExp || "";
+  if ($("drugName")) $("drugName").value = e.drugName || "";
+  if ($("drugLock")) $("drugLock").value = e.drugLock || "";
+  if ($("drugDoneOn")) $("drugDoneOn").value = e.drugDoneOn || "";
+  if ($("drugInitials")) $("drugInitials").value = e.drugInitials || "";
 
   editingIndex = idx;
   if ($("savedBadge")) $("savedBadge").hidden = true;
 
-  // open dept card (for visibility)
-  $("deptCard").hidden = false;
+  // open dept card for visibility
+  if ($("deptCard")) $("deptCard").hidden = false;
 
+  updateSelectedMeta();
   updateCompleteIndicator();
   showEntryView();
   toast("Editing saved item. Press SAVE to update.");
@@ -386,28 +399,10 @@ function deleteEntry(idx) {
 }
 
 /* =========================
-   Firebase — dynamic load ONLY on submit
+   Firebase — submit (FIXED)
+   - Uses existing db/auth
+   - addDoc => easiest rules (create)
    ========================= */
-let fb = null;
-
-async function loadFirebase() {
-  if (fb) return fb;
-
-  const [{ initializeApp }, { getFirestore, collection, doc, setDoc, serverTimestamp },
-         { getAuth, signInAnonymously }] = await Promise.all([
-    import("https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js"),
-    import("https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js"),
-    import("https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js"),
-  ]);
-
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  const auth = getAuth(app);
-
-  fb = { db, auth, collection, doc, setDoc, serverTimestamp, signInAnonymously };
-  return fb;
-}
-
 function deviceId() {
   let id = localStorage.getItem("cc_device_id_v3");
   if (!id) {
@@ -425,36 +420,54 @@ async function submitToFirebase() {
   }
 
   try {
-    setSync("Loading Firebase…", true);
-    const F = await loadFirebase();
+    setSync("Checking auth…", true);
 
-    setSync("Signing in…", true);
-    await F.signInAnonymously(F.auth);
+    // Safari refresh sometimes drops session
+    if (!auth.currentUser) {
+      await signInAnonymously(auth);
+      console.log("Re-signed in UID:", auth.currentUser?.uid);
+    }
 
     setSync("Uploading…", true);
 
-    const submissionsCol = F.collection(F.db, "crash_cart_submissions");
-    const submissionId = `sub_${new Date().toISOString().replaceAll(":", "-")}_${deviceId()}`;
-    const ref = F.doc(submissionsCol, submissionId);
-
-    await F.setDoc(ref, {
+    const payload = {
       deviceId: deviceId(),
+      uid: auth.currentUser?.uid || null,
       entryCount: batch.length,
       entries: batch,
-      createdAt: F.serverTimestamp()
-    });
+      createdAt: serverTimestamp(),
+      source: "Crash Cart Stickers"
+    };
 
+    // ✅ addDoc writes a new doc to the collection
+    const docRef = await addDoc(
+      collection(db, "crash_cart_submissions"),
+      payload
+    );
+
+    console.log("✅ Submit success. Doc ID:", docRef.id);
+
+    // Clear local batch AFTER upload
     batch = [];
     saveBatch(batch);
     updateCounts();
     renderPreview();
+
     setSync("Submitted ✅", true);
     toast("Submitted to Firebase ✅");
-
   } catch (err) {
-    console.error(err);
+    console.error("🔥 FIREBASE SUBMIT ERROR:", err);
+    console.error("code:", err?.code, "message:", err?.message);
+
     setSync("Submit failed", false);
-    toast("Submit failed. Check Firebase config/rules.");
+
+    if (err?.code === "permission-denied") {
+      toast("Submit failed: permissions (rules/collection name).");
+    } else if (String(err?.message || "").toLowerCase().includes("failed to fetch")) {
+      toast("Submit failed: network / blocked request.");
+    } else {
+      toast("Submit failed. Check console.");
+    }
   }
 }
 
@@ -462,20 +475,23 @@ async function submitToFirebase() {
    Wire events
    ========================= */
 function wire() {
-  // Even if JS runs, keep Dept click simple
+  // Department open/close (always works)
   $("deptBtn")?.addEventListener("click", () => { $("deptCard").hidden = false; });
   $("closeDeptCard")?.addEventListener("click", () => { $("deptCard").hidden = true; });
 
   $("cartTypeSelect")?.addEventListener("change", onCartTypeChange);
   $("sectionSelect")?.addEventListener("change", onSectionChange);
   $("locationSelect")?.addEventListener("change", () => { updateSelectedMeta(); updateCompleteIndicator(); });
+
   $("cartNumberInput")?.addEventListener("input", () => { updateSelectedMeta(); updateCompleteIndicator(); });
 
-  ["supplyFirst","supplyDate","supplyDone","supplyTech","drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"]
-    .forEach(id => {
-      $(id)?.addEventListener("input", updateCompleteIndicator);
-      $(id)?.addEventListener("change", updateCompleteIndicator);
-    });
+  [
+    "supplyFirst","supplyDate","supplyDone","supplyTech",
+    "drugFirstExp","drugName","drugLock","drugDoneOn","drugInitials"
+  ].forEach(id => {
+    $(id)?.addEventListener("input", updateCompleteIndicator);
+    $(id)?.addEventListener("change", updateCompleteIndicator);
+  });
 
   $("saveBtn")?.addEventListener("click", saveEntry);
   $("clearBtn")?.addEventListener("click", () => clearFields(true));
@@ -504,8 +520,8 @@ function init() {
   // prepare selects
   resetSelect($("sectionSelect"), "Select section…");
   resetSelect($("locationSelect"), "Select location…");
-  $("sectionSelect").disabled = true;
-  $("locationSelect").disabled = true;
+  if ($("sectionSelect")) $("sectionSelect").disabled = true;
+  if ($("locationSelect")) $("locationSelect").disabled = true;
 
   batch = loadBatch();
   updateCounts();
