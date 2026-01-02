@@ -1,3 +1,4 @@
+<!-- index.html (LOCK/PIN REMOVED — always-unlocked build) -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -7,32 +8,6 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-
-  <!-- PIN GATE -->
-  <div id="pinGate" class="pinGate">
-    <div class="pinCard">
-      <div class="pinTitle">Enter Access PIN</div>
-      <div class="pinSub">Crash Cart Check — authorized staff only</div>
-
-      <input
-        id="pinInput"
-        class="pinInput"
-        type="password"
-        inputmode="numeric"
-        pattern="[0-9]*"
-        maxlength="8"
-        placeholder="••••••"
-        autocomplete="off"
-      />
-
-      <button id="pinUnlockBtn" class="pinBtn" type="button">Unlock</button>
-      <div id="pinError" class="pinError" aria-live="polite"></div>
-
-      <div class="pinHint">
-        If you don’t have the PIN, contact your lead.
-      </div>
-    </div>
-  </div>
 
   <div class="app">
 
@@ -47,10 +22,9 @@
       </div>
 
       <div class="topbar__right">
-        <button id="lockBtn" class="lockBtn" type="button" aria-label="Lock">🔒 Lock</button>
         <div class="syncchip" aria-label="Sync status">
           <span class="dot" id="syncDot"></span>
-          <span id="syncText">…</span>
+          <span id="syncText">Ready</span>
         </div>
       </div>
     </header>
@@ -193,7 +167,7 @@
         </div>
 
         <div class="meta">
-          Tip: Select Cart Type + Section + Location + Cart # first. Save creates a ✅ “completed sticker” for that location.
+          Tip: Select Cart Type + Section + Location + Cart # first. Save adds it to your batch for Preview / Submit.
         </div>
 
       </div>
@@ -217,7 +191,7 @@
         </div>
 
         <div class="meta">
-          Submit uploads everything as one “Submission” (with an entries array). You can edit any item before submitting.
+          Submit uploads everything as one “Submission” document (with an entries array). You can edit any item before submitting.
         </div>
       </div>
     </main>
